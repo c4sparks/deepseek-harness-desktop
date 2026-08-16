@@ -54,25 +54,23 @@ DeepSeek Harness Desktop 是一个**薄壳**，是 DeepSeek Harness 的非官方
 
 ## 快速开始（开发）
 
-前置：Rust（MSVC 工具链，含 VS Build Tools C++ 工作负载）、Node.js ≥ 22、pnpm。
+> 三平台共用同一套构建流程，差异只在「工具链前置」和「打包命令」。下面先给**通用步骤**，再按平台列**特定差异**。
 
 > ⚠️ `native/binaries/`（sidecar）与 `resources/app/`（宿主包）是**构建产物**，已 gitignore，**仓库里没有**——首次运行前必须先组装。
 
-```bash
-# 0) Windows Git Bash 通常需手动补 Rust 工具链 PATH
-export PATH="$HOME/.cargo/bin:$PATH"
+### 一、通用步骤（三平台相同）
 
+**前置**：Rust、Node.js ≥ 22、pnpm。
+
+```bash
 # 1) 安装依赖
 pnpm install
 
 # 2) 组装 sidecar + 宿主包（首次必做；需要一个本地 Node ≥ 22 可执行文件）
-node scripts/package-sidecar.mjs --node-bin /path/to/node.exe
+node scripts/package-sidecar.mjs --node-bin <本平台 Node 路径>
 
 # 3) 开发模式启动（编译 Rust 壳并拉起 sidecar）
 pnpm dev
-
-# 4) 打包 Windows NSIS 安装包（会重新组装 sidecar + 宿主包，较慢）
-pnpm build
 ```
 
 说明：
@@ -80,6 +78,68 @@ pnpm build
 - `--node-bin` 需要一个本机 Node ≥ 22 可执行文件（`@deepseek-ai/dsh` 的 engines 要求）；脚本不会自动下载 Node。`--triple` 默认取当前平台，Windows x64 可不传。
 - 修改宿主依赖后需重跑第 2 步（会重建 `resources/app`，较慢）。
 - 首次 `pnpm dev` 会编译 Rust 壳，需较长时间属正常。
+
+### 二、各平台特定步骤
+
+#### Windows
+
+**补充前置**：Rust **MSVC 工具链**（含 VS Build Tools C++ 工作负载）；Git Bash 通常需手动补 PATH：
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+```bash
+# 组装 sidecar（node 为 .exe）
+node scripts/package-sidecar.mjs --node-bin /path/to/node.exe
+
+pnpm dev
+
+# 打包 Windows NSIS 安装包（会重新组装 sidecar + 宿主包，较慢）
+pnpm build
+```
+
+#### macOS
+
+**补充前置**：`xcode-select --install`（Xcode 命令行工具）。
+
+```bash
+# 组装 sidecar（node 无扩展名）
+node scripts/package-sidecar.mjs --node-bin $(which node)
+
+pnpm dev
+
+# 打包（.app + dmg）
+cd native && tauri build --bundles dmg
+```
+
+#### Linux
+
+**补充前置**：
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+```bash
+# 组装 sidecar（node 无扩展名）
+node scripts/package-sidecar.mjs --node-bin $(which node)
+
+pnpm dev
+
+# 打包（deb + AppImage）
+cd native && tauri build --bundles deb appimage
+```
+
+### 三、注意事项
+
+- **组装 sidecar + 宿主包必须在目标平台本机执行**：`npm install` 会把 node-pty / koffi 等原生模块按**当前平台**编译，跨平台不通用。
+- **跨平台交叉出包不可行**（在 Windows 打 mac / Linux 包），需在对应平台本机或 CI 构建。
+- **macOS / Linux 不要直接跑 `pnpm build`**（内部是裸 `tauri build`）：`native/tauri.conf.json` 的 `bundle.targets` 目前为 `["nsis"]`（Windows 专属），会按 nsis 出包、不产出 dmg / deb / AppImage，且 `package-sidecar.mjs` 缺 `--node-bin` 时没有 node 来源。要么用 `--bundles` 覆盖，要么把 `bundle.targets` 改为目标平台（如 `["dmg"]` / `["deb","appimage"]`）。
+- `native/.cargo/config.toml`（本地盘 target 重定向）是 Windows **本机专属**配置，已被 gitignore；macOS / Linux 没有该文件，cargo 默认用 `native/target/`，无需处理。
+- macOS / Linux 的 sidecar 是重命名后的 node 可执行文件，需具备可执行权限（`--node-bin` 指向的 node 自带，复制后一般保留；异常时可 `chmod +x native/binaries/dsh-host-*`）。
+- `native/icons/` 已含各平台图标（icns / png），无需重新生成。
+- 打包出的**正式分发包**仍需代码签名 / 公证；本地打包验证不需要。
 
 ### 升级上游deepseek-ai包（deepseek-harness 发版后）
 
