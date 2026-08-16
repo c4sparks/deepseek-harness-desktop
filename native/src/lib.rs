@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use tauri::Manager;
 use tauri::Emitter;
+use tauri::{LogicalSize, Size};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -155,6 +156,27 @@ fn show_main_window(app: &tauri::AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+/// Cap the main window to the monitor's work area so it never exceeds the
+/// screen. The tauri.conf.json default is 1280×800, which is taller than small
+/// screens (e.g. 1280×720 laptops → the bottom is clipped until maximized).
+fn fit_window_to_screen(window: &tauri::WebviewWindow) {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else { return };
+    let work = monitor.work_area();
+    let scale = monitor.scale_factor();
+    // 96% of the work area, but never smaller than the min size.
+    let w = (1280.0_f64).min(work.width as f64 * 0.96 / scale).max(800.0);
+    let h = (800.0_f64).min(work.height as f64 * 0.96 / scale).max(600.0);
+    if w >= 800.0 && h >= 600.0 {
+        let _ = window.set_size(Size::Logical(LogicalSize::new(w, h)));
+    }
+    let _ = window.center();
 }
 
 /// Toggle main window visibility (tray left-click).
@@ -445,6 +467,9 @@ pub fn run() {
             });
             build_tray(app)?;
             setup_deep_link(app);
+            if let Some(window) = app.get_webview_window("main") {
+                fit_window_to_screen(&window);
+            }
             start_sidecar(app_handle, 0);
             Ok(())
         })

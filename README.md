@@ -75,7 +75,7 @@ pnpm dev
 
 说明：
 
-- `--node-bin` 需要一个本机 Node ≥ 22 可执行文件（`@deepseek-ai/dsh` 的 engines 要求）；脚本不会自动下载 Node。`--triple` 默认取当前平台，Windows x64 可不传。
+- `--node-bin` 需要一个本机 Node ≥ 22 可执行文件（`@deepseek-ai/dsh` 的 engines 要求）；脚本不会自动下载 Node。`--triple <目标>` 默认取当前平台，也可显式指定目标平台（分平台裁剪会跟随该目标），Windows x64 可不传。
 - 修改宿主依赖后需重跑第 2 步（会重建 `resources/app`，较慢）。
 - 首次 `pnpm dev` 会编译 Rust 壳，需较长时间属正常。
 
@@ -131,12 +131,26 @@ pnpm dev
 cd native && tauri build --bundles deb appimage
 ```
 
-### 三、注意事项
+### 三、可选：启用"Claude Code 子 agent"（按需）
+
+安装包不含 Claude 二进制（原因见「注意事项」）。需要"Claude Code 子 agent"功能的机器按需启用：
+
+```bash
+# 1) 把真实 claude 装到 ~/.dsh/bin
+node scripts/fetch-claude.mjs
+
+# 2) 把 ~/.dsh/bin 加到 PATH 最前（否则 npm 的 claude.cmd shim 先被命中 → 启动报 EINVAL）
+```
+
+完成后 dsh 即可从 PATH 解析 claude 并启用该子 agent。
+
+### 四、注意事项
 
 - **组装 sidecar + 宿主包必须在目标平台本机执行**：`npm install` 会把 node-pty / koffi 等原生模块按**当前平台**编译，跨平台不通用。
 - **跨平台交叉出包不可行**（在 Windows 打 mac / Linux 包），需在对应平台本机或 CI 构建。
 - **macOS / Linux 不要直接跑 `pnpm build`**（内部是裸 `tauri build`）：`native/tauri.conf.json` 的 `bundle.targets` 目前为 `["nsis"]`（Windows 专属），会按 nsis 出包、不产出 dmg / deb / AppImage，且 `package-sidecar.mjs` 缺 `--node-bin` 时没有 node 来源。要么用 `--bundles` 覆盖，要么把 `bundle.targets` 改为目标平台（如 `["dmg"]` / `["deb","appimage"]`）。
 - **打包路径超限（Windows）**：npm 扁平 bundle 的深层 `.map` / `.d.ts`（传递依赖）在长项目路径下可能超 Windows MAX_PATH(260)，makensis 会中止打包（`failed opening file …`）。`scripts/package-sidecar.mjs` 已在 `npm install` 后自动清理这些运行时不需要的文件；如仍报错，多半是项目路径过长（换短路径）或存在其他超长路径文件。
+- **Claude Agent SDK 外部化**：`@anthropic-ai/claude-agent-sdk-*` 平台二进制文件，不打进安装包——`dsh-subagent-claude-code` 插件从 PATH 解析 `claude` 并作为 `pathToClaudeCodeExecutable` 交给 SDK，不使用内置包（实测 SDK 需要真实可执行文件，npm 的 `.cmd` shim 会 `spawn EINVAL`）。需要"Claude Code 子 agent"功能的机器运行 `node scripts/fetch-claude.mjs` 把 claude 装到 `~/.dsh/bin` 并加入 PATH 最前。
 - `native/.cargo/config.toml`（本地盘 target 重定向）是 Windows **本机专属**配置，已被 gitignore；macOS / Linux 没有该文件，cargo 默认用 `native/target/`，无需处理。
 - macOS / Linux 的 sidecar 是重命名后的 node 可执行文件，需具备可执行权限（`--node-bin` 指向的 node 自带，复制后一般保留；异常时可 `chmod +x native/binaries/dsh-host-*`）。
 - `native/icons/` 已含各平台图标（icns / png），无需重新生成。

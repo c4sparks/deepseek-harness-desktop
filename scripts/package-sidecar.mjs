@@ -148,6 +148,71 @@ function pruneHostBundle(appDir, opts) {
   console.log(`pruned ${removed} non-runtime files (*.map / *.d.ts) from host bundle`)
 }
 
+/**
+ * Keep only the current platform's native binaries in the installed bundle.
+ *
+ * Why: npm install pulls prebuilds / optional platform packages for ALL
+ * platforms (node-pty/prebuilds ships darwin/linux/win32; @img/sharp-* ships a
+ * per-platform native binding plus a wasm fallback). Only the current
+ * platform's copy is needed at runtime — and since the bundle is always
+ * assembled on the target platform, each platform's package keeps exactly its
+ * own. Dropping the rest shrinks the installer. If a platform lacks a native
+ * binding (no `${platform}-${arch}` copy), the wasm fallback is kept.
+ */
+function pruneNativeCrossPlatform(appDir, opts) {
+  // Native binaries are per-target-platform. Honor --triple when given (e.g.
+  // cross-assembly), else the machine running this script — the normal flow
+  // assembles on the target machine, so they coincide.
+  const triple = resolveTriple(opts.triple)
+  const keep = Object.entries(TRIPLES).find(([, t]) => t.triple === triple.triple)?.[0]
+    ?? `${process.platform}-${process.arch}` // e.g. win32-x64
+  if (opts.dryRun) {
+    console.log(`[dry-run] would prune cross-platform native packages (keep ${keep})`)
+    return
+  }
+  let removed = 0
+  // node-pty: keep only this platform's prebuild (e.g. win32-x64).
+  const ptyPrebuilds = join(appDir, 'node_modules', 'node-pty', 'prebuilds')
+  if (existsSync(ptyPrebuilds)) {
+    const hasKeep = existsSync(join(ptyPrebuilds, keep))
+    for (const e of readdirSync(ptyPrebuilds, { withFileTypes: true })) {
+      if (e.isDirectory() && e.name !== keep && hasKeep) {
+        rmSync(join(ptyPrebuilds, e.name), { recursive: true, force: true })
+        removed++
+      }
+    }
+  }
+  // @img/sharp-*: keep this platform's native binding; drop the wasm fallback
+  // only when the native one is present (else sharp would lose its fallback).
+  const imgDir = join(appDir, 'node_modules', '@img')
+  if (existsSync(imgDir)) {
+    const hasNative = existsSync(join(imgDir, `sharp-${keep}`))
+    for (const e of readdirSync(imgDir, { withFileTypes: true })) {
+      if (!e.isDirectory() || !e.name.startsWith('sharp')) continue
+      if (e.name === `sharp-${keep}`) continue
+      if (e.name === 'sharp-wasm32' && !hasNative) continue
+      rmSync(join(imgDir, e.name), { recursive: true, force: true })
+      removed++
+    }
+  }
+  // Claude Agent SDK: drop the bundled native CLI package entirely (keeps the
+  // ~253MB claude.exe out of the installer). dsh-subagent-claude-code resolves
+  // `claude` from PATH and passes it to the SDK as `pathToClaudeCodeExecutable`
+  // (verified: the SDK never uses the bundled package, and needs a real
+  // executable, not a .cmd shim). Users who want the "Claude Code 子 agent"
+  // feature install a real claude via scripts/fetch-claude.mjs.
+  const anthropicDir = join(appDir, 'node_modules', '@anthropic-ai')
+  if (existsSync(anthropicDir)) {
+    for (const e of readdirSync(anthropicDir, { withFileTypes: true })) {
+      if (e.isDirectory() && e.name.startsWith('claude-agent-sdk-')) {
+        rmSync(join(anthropicDir, e.name), { recursive: true, force: true })
+        removed++
+      }
+    }
+  }
+  console.log(`pruned ${removed} cross-platform native packages (keep ${keep})`)
+}
+
 function prepareHostBundle(opts) {
   const appDir = join(RESOURCES, 'app')
   console.log(`installing deepseek-harness-desktop production deps (npm, flat) -> ${appDir}`)
@@ -168,6 +233,8 @@ function prepareHostBundle(opts) {
   // Dev-only sourcemaps / type declarations would exceed MAX_PATH when bundled
   // (see pruneHostBundle) — remove them before tauri build packages this dir.
   pruneHostBundle(appDir, opts)
+  // Keep only this platform's native binaries (node-pty prebuilds, @img/sharp).
+  pruneNativeCrossPlatform(appDir, opts)
   // The host lives under the installed dependency, not the bundle root.
   const bin = join(appDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
   if (!opts.dryRun && !existsSync(bin)) {
