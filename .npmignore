@@ -1,0 +1,9 @@
+# Keep pnpm deploy / npm pack lean: the host bundle only needs package.json + node_modules.
+# Excluding these also prevents cargo build artifacts from ballooning resources/app (Windows MAX_PATH + disk).
+node_modules/
+resources/
+native/target/
+native/gen/
+native/binaries/
+*.log
+.stage/

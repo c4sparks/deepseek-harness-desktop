@@ -1,0 +1,15 @@
+# Standalone copy of apps/desktop: single-package workspace so the in-repo
+# package-sidecar.mjs (`pnpm --filter deepseek-harness-desktop deploy`) keeps working.
+# Build-script allowlist mirrors the monorepo root pnpm-workspace.yaml (pnpm 11
+# strictDepBuilds hard-fails otherwise).
+packages:
+  - .
+
+allowBuilds:
+  esbuild: true
+  lefthook: true
+  node-pty: true
+  koffi: true
+  '@deepseek-ai/dsh-subprocess-local': true
+  '@google/genai': false
+  protobufjs: false

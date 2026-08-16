@@ -1,0 +1,18 @@
+# build staging / host bundle
+.stage/
+resources/
+node_modules
+
+# generated assets
+native/target/
+# machine-local cargo target-dir override (absolute path; see config.toml)
+native/.cargo/
+native/icons/
+native/gen/
+native/binaries/
+docs
+*.log
+Thumbs.db
+
+.claude
+.codegraph
