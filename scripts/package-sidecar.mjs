@@ -20,7 +20,7 @@
  *             CI concern (M3); the URL is printed for reference.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, cpSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, cpSync, rmSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -118,6 +118,36 @@ function ensureNodeRuntime(opts) {
   throw new Error('no node runtime source: pass --node-bin or run on CI (M3 implements download)')
 }
 
+/**
+ * Prune sourcemaps / TypeScript declarations from the installed host bundle.
+ *
+ * Why: npm's flat node_modules still contains deep .map / .d.ts files (e.g.
+ * @mistralai/mistralai, @opentelemetry/*). Resolved from a long project-root
+ * path they exceed Windows MAX_PATH (260), and makensis (NSIS, 32-bit, not
+ * long-path-aware) aborts bundling with "failed opening file …d.ts.map".
+ * These files are dev-only (sourcemaps / type declarations), never needed at
+ * runtime — pruning fixes packaging and shrinks the installer.
+ */
+function pruneHostBundle(appDir, opts) {
+  if (opts.dryRun) {
+    console.log('[dry-run] would prune *.map / *.d.ts from host bundle')
+    return
+  }
+  let removed = 0
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        walk(join(dir, entry.name))
+      } else if (entry.isFile() && (entry.name.endsWith('.map') || entry.name.endsWith('.d.ts'))) {
+        rmSync(join(dir, entry.name), { force: true })
+        removed++
+      }
+    }
+  }
+  walk(appDir)
+  console.log(`pruned ${removed} non-runtime files (*.map / *.d.ts) from host bundle`)
+}
+
 function prepareHostBundle(opts) {
   const appDir = join(RESOURCES, 'app')
   console.log(`installing deepseek-harness-desktop production deps (npm, flat) -> ${appDir}`)
@@ -128,11 +158,16 @@ function prepareHostBundle(opts) {
     mkdirSync(appDir, { recursive: true })
     cpSync(join(PKG_ROOT, 'package.json'), join(appDir, 'package.json'))
   }
-  // npm produces a flat, self-contained node_modules (no .pnpm store) whose
-  // deepest paths stay well under Windows MAX_PATH (260) — pnpm's isolated
-  // layout (.pnpm hash dirs + junctions) exceeds it and breaks makensis/NSIS.
-  // Native modules (node-pty/koffi) compile via npm install scripts.
+  // npm produces a flat, self-contained node_modules (no .pnpm store) — pnpm's
+  // isolated layout (.pnpm hash dirs + junctions) exceeds Windows MAX_PATH(260)
+  // and breaks makensis/NSIS. npm flat is far shorter, but deep .map/.d.ts
+  // files + a long project root can still cross 260, so prune right after
+  // install (see pruneHostBundle). Native modules (node-pty/koffi) compile via
+  // npm install scripts.
   run('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--prefix', appDir.replace(/\\/g, '/')], opts)
+  // Dev-only sourcemaps / type declarations would exceed MAX_PATH when bundled
+  // (see pruneHostBundle) — remove them before tauri build packages this dir.
+  pruneHostBundle(appDir, opts)
   // The host lives under the installed dependency, not the bundle root.
   const bin = join(appDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
   if (!opts.dryRun && !existsSync(bin)) {

@@ -136,6 +136,7 @@ cd native && tauri build --bundles deb appimage
 - **组装 sidecar + 宿主包必须在目标平台本机执行**：`npm install` 会把 node-pty / koffi 等原生模块按**当前平台**编译，跨平台不通用。
 - **跨平台交叉出包不可行**（在 Windows 打 mac / Linux 包），需在对应平台本机或 CI 构建。
 - **macOS / Linux 不要直接跑 `pnpm build`**（内部是裸 `tauri build`）：`native/tauri.conf.json` 的 `bundle.targets` 目前为 `["nsis"]`（Windows 专属），会按 nsis 出包、不产出 dmg / deb / AppImage，且 `package-sidecar.mjs` 缺 `--node-bin` 时没有 node 来源。要么用 `--bundles` 覆盖，要么把 `bundle.targets` 改为目标平台（如 `["dmg"]` / `["deb","appimage"]`）。
+- **打包路径超限（Windows）**：npm 扁平 bundle 的深层 `.map` / `.d.ts`（传递依赖）在长项目路径下可能超 Windows MAX_PATH(260)，makensis 会中止打包（`failed opening file …`）。`scripts/package-sidecar.mjs` 已在 `npm install` 后自动清理这些运行时不需要的文件；如仍报错，多半是项目路径过长（换短路径）或存在其他超长路径文件。
 - `native/.cargo/config.toml`（本地盘 target 重定向）是 Windows **本机专属**配置，已被 gitignore；macOS / Linux 没有该文件，cargo 默认用 `native/target/`，无需处理。
 - macOS / Linux 的 sidecar 是重命名后的 node 可执行文件，需具备可执行权限（`--node-bin` 指向的 node 自带，复制后一般保留；异常时可 `chmod +x native/binaries/dsh-host-*`）。
 - `native/icons/` 已含各平台图标（icns / png），无需重新生成。
