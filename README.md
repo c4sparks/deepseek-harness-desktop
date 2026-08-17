@@ -89,6 +89,12 @@ pnpm dev
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
+> 不用 Git Bash？等价写法：
+> - **cmd**：`set PATH=%USERPROFILE%\.cargo\bin;%PATH%`
+> - **PowerShell**：`$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"`
+>
+> 提示：rustup 安装时通常已把 `%USERPROFILE%\.cargo\bin` 写入用户 PATH，只有 Git Bash 在 rustup 安装**之后**才打开（PATH 未刷新）时才需要手动补。
+
 ```bash
 # 组装 sidecar（node 为 .exe）
 node scripts/package-sidecar.mjs --node-bin /path/to/node.exe

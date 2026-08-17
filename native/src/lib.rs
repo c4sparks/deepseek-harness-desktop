@@ -38,6 +38,9 @@ const MAX_ATTEMPTS: u32 = 5;
 const BACKOFF_SECS: [u64; 4] = [1, 2, 4, 8];
 /// Event name sent to the loading page (sidecar lifecycle).
 const STATUS_EVENT: &str = "sidecar-status";
+/// Window size as a fraction of the monitor's work area when fitting to
+/// screen at startup (see `fit_window_to_screen`).
+const SCREEN_RATIO: f64 = 0.90;
 
 /// Payload broadcast to the main window describing shell lifecycle state.
 #[derive(Clone, serde::Serialize)]
@@ -158,9 +161,11 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
-/// Cap the main window to the monitor's work area so it never exceeds the
-/// screen. The tauri.conf.json default is 1280×800, which is taller than small
-/// screens (e.g. 1280×720 laptops → the bottom is clipped until maximized).
+/// Fit the main window to the monitor's work area so it adapts to any screen:
+/// on large screens it grows to `SCREEN_RATIO` of the work area instead of
+/// staying at the 1280×800 default, on small screens it shrinks so nothing is
+/// clipped, and it is never smaller than the configured minimum size (800×600,
+/// matching `tauri.conf.json`). The window is centered afterwards.
 fn fit_window_to_screen(window: &tauri::WebviewWindow) {
     let monitor = window
         .current_monitor()
@@ -170,12 +175,11 @@ fn fit_window_to_screen(window: &tauri::WebviewWindow) {
     let Some(monitor) = monitor else { return };
     let work = monitor.work_area();
     let scale = monitor.scale_factor();
-    // 96% of the work area, but never smaller than the min size.
-    let w = (1280.0_f64).min(work.width as f64 * 0.96 / scale).max(800.0);
-    let h = (800.0_f64).min(work.height as f64 * 0.96 / scale).max(600.0);
-    if w >= 800.0 && h >= 600.0 {
-        let _ = window.set_size(Size::Logical(LogicalSize::new(w, h)));
-    }
+    // `SCREEN_RATIO` of the work area, converted to logical pixels, floored at
+    // the minimum size so the UI never becomes unusably small.
+    let w = (work.size.width as f64 * SCREEN_RATIO / scale).max(800.0);
+    let h = (work.size.height as f64 * SCREEN_RATIO / scale).max(600.0);
+    let _ = window.set_size(Size::Logical(LogicalSize::new(w, h)));
     let _ = window.center();
 }
 
