@@ -15,7 +15,9 @@
  *   node scripts/sync-deps.mjs --version <上游版本> --dry-run        # preview, write nothing
  *   node scripts/sync-deps.mjs --app-version <上游版本>              # bump the app's own version (package.json + tauri.conf.json + Cargo.toml)
  *   node scripts/sync-deps.mjs --list                               # list available @deepseek-ai/dsh versions
- *   node scripts/sync-deps.mjs --refresh-manifest                    # regenerate scripts/dsh-manifest.json from upstream module-graph.md
+ *   node scripts/sync-deps.mjs --refresh-manifest [--ref <git-ref>] # regenerate scripts/dsh-manifest.json from module-graph.md (default: master;
+ *                                                                   #  pass the release tag, e.g. dsh-v0.1.1-rc.2, to match a published release —
+ *                                                                   #  master can list packages that were never published)
  *
  * After a successful run: pnpm install && pnpm build   (re-assembles sidecar + host bundle).
  * The target dep version must already be published on npm.
@@ -26,6 +28,10 @@
  * deps against it (add missing, drop stale, bump versions). @deepseek-ai/dsh and
  * the SPECIAL entries are always preserved. Run --refresh-manifest when upstream
  * adds/removes packages.
+ *
+ * SPECIAL entries (independent version lines, e.g. cordis-plugin-group) are
+ * auto-aligned to their npm `latest` dist-tag on every --version run. To pin
+ * something other than `latest`, edit the value here.
  */
 import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -35,9 +41,10 @@ import { fileURLToPath } from 'node:url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG_PATH = join(resolve(HERE, '..'), 'package.json')
 const MANIFEST_PATH = join(HERE, 'dsh-manifest.json')
-const MANIFEST_URL = 'https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/master/docs/module-graph.md'
 
-// Version lines independent of the dsh release line — never auto-bumped.
+// Version lines independent of the dsh release line. `--version` auto-aligns
+// each SPECIAL entry to its npm `latest` dist-tag; edit the value here to pin
+// something other than `latest` (then --sync keeps it).
 const SPECIAL = {
   '@deepseek-ai/cordis-plugin-group': '1.0.1',
 }
@@ -62,14 +69,19 @@ const EXCLUDE = new Set([
   '@deepseek-ai/dsh-sdk-jsonrpc-demo',
   '@deepseek-ai/dsh-sdk-jsonrpc-server',
   '@deepseek-ai/dsh-sdk-protocol',
+  // Experimental packages listed in the module-graph but not published to npm
+  // at the release version (0.1.1-rc.2 era): ship only what resolves.
+  '@deepseek-ai/dsh-experimental-agent-team',
+  '@deepseek-ai/dsh-experimental-tool-agent-team',
 ])
 
 function parseArgs(argv) {
-  const opts = { version: undefined, appVersion: undefined, sync: false, refreshManifest: false, list: false, remove: [], dryRun: false }
+  const opts = { version: undefined, appVersion: undefined, sync: false, refreshManifest: false, list: false, remove: [], dryRun: false, ref: 'master' }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--version') opts.version = argv[++i]
     else if (a === '--app-version') opts.appVersion = argv[++i]
+    else if (a === '--ref') opts.ref = argv[++i]
     else if (a === '--sync') opts.sync = true
     else if (a === '--refresh-manifest') opts.refreshManifest = true
     else if (a === '--list') opts.list = true
@@ -91,14 +103,18 @@ function readManifest() {
 }
 
 /** Regenerate scripts/dsh-manifest.json from upstream docs/module-graph.md. */
-async function refreshManifest(dryRun) {
+async function refreshManifest(dryRun, ref = 'master') {
+  // Sync against a specific git ref: `master` can list packages that were added
+  // after the release and never published, so `--ref <tag>` (e.g.
+  // `dsh-v0.1.1-rc.2`) pins the manifest to exactly what that release ships.
+  const manifestUrl = `https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/${ref}/docs/module-graph.md`
   let text
   try {
-    const res = await fetch(MANIFEST_URL, { signal: AbortSignal.timeout(30_000) })
+    const res = await fetch(manifestUrl, { signal: AbortSignal.timeout(30_000) })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     text = await res.text()
   } catch (e) {
-    console.error(`sync-deps: fetch ${MANIFEST_URL} failed: ${e.message}`)
+    console.error(`sync-deps: fetch ${manifestUrl} failed: ${e.message}`)
     return 2
   }
   const all = new Set()
@@ -134,7 +150,7 @@ async function refreshManifest(dryRun) {
     console.log('refresh-manifest: --dry-run, nothing written')
     return 0
   }
-  const manifest = { source: MANIFEST_URL, generatedAt: new Date().toISOString(), packages: included }
+  const manifest = { source: manifestUrl, generatedAt: new Date().toISOString(), packages: included }
   writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
   console.log(`refresh-manifest: wrote ${MANIFEST_PATH}`)
   return 0
@@ -250,7 +266,7 @@ async function main() {
     return bumpAppVersion(opts.appVersion, opts.dryRun)
   }
   if (opts.refreshManifest) {
-    return refreshManifest(opts.dryRun)
+    return refreshManifest(opts.dryRun, opts.ref)
   }
   if (opts.list) {
     return listVersions()
@@ -269,6 +285,27 @@ async function main() {
     if (!name.startsWith('@deepseek-ai/')) continue
     if (name in SPECIAL) continue
     if (ver !== opts.version) changes.push({ type: 'bump', name, from: ver, to: opts.version })
+  }
+
+  // 1.5) SPECIAL entries run their own version line (independent of dsh), so
+  // `--version` can't cover them. Auto-align each to its npm `latest` dist-tag
+  // (e.g. cordis-plugin-group → its 1.0.x line) — that's the current stable
+  // release and needs no guessing. To pin something other than `latest`, edit
+  // the SPECIAL constant and `--sync` keeps it. Network failures are skipped.
+  for (const [name] of Object.entries(SPECIAL)) {
+    const current = deps[name]
+    if (current === undefined) continue // absent: --sync re-adds at the SPECIAL value
+    let latest
+    try {
+      const tags = npmViewJson([name, 'dist-tags'])
+      latest = tags && tags.latest
+    } catch (e) {
+      console.warn(`sync-deps: skip ${name} (cannot read dist-tags: ${e.message})`)
+      continue
+    }
+    if (latest && latest !== current) {
+      changes.push({ type: 'bump', name, from: current, to: latest })
+    }
   }
 
   // 2) explicit removals.

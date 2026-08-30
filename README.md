@@ -12,7 +12,7 @@ DeepSeek Harness Desktop 是一个**薄壳**，是 DeepSeek Harness 的非官方
 
 - **能力跟随上游**：桌面端能做什么，取决于锁定的 `@deepseek-ai/*` 版本。deepseek-harness 发新版前，桌面端不会自动获得新功能或修复。
 - **不实时联动源码**：桌面端不随 deepseek-harness 仓库源码更新而更新。升级靠一条命令更新依赖（见「快速开始」的「升级上游」）：`node scripts/sync-deps.mjs --version <上游版本>` → 重新组装 sidecar 与宿主包 → 重新打包。
-- **版本锁定**：`@deepseek-ai/*@0.1.0-rc.6`（205 个）+ `@deepseek-ai/cordis-plugin-group@1.0.1`，固定精确版本以保证可复现安装。
+- **版本锁定**：`@deepseek-ai/*@0.1.1-rc.2`（211 个）+ `@deepseek-ai/cordis-plugin-group@1.0.1`，固定精确版本以保证可复现安装。
 
 ## 功能特性
 
@@ -30,6 +30,8 @@ DeepSeek Harness Desktop 是一个**薄壳**，是 DeepSeek Harness 的非官方
 
 - **独立窗口**：默认 1280×800，可缩放
 - **系统托盘 + 菜单**：左键单击切换窗口显示/隐藏；右键菜单可显示/隐藏/退出
+- **侧车模式（设置项 `trayMode`）**：无窗口后台运行，托盘左键/菜单在默认浏览器打开原始 dsh（`http://127.0.0.1:<port>`）；托盘菜单「切换为侧车模式/切换为窗口模式」随时切换并记住选择（写入 `$DSH_HOME/desktop-settings.json`）；「打开桌面窗口」可临时切回内嵌窗口——两个形态共享同一宿主
+- **可配置 profile（设置项 `profile`）**：启动哪个 dsh profile 不写死——读取 `$DSH_HOME/desktop-settings.json` 的 `profile`（默认 `web`，可设为任意 `$DSH_HOME/profiles/` 下的名字，如 `desktop`）；托盘「切换 Profile」随时切换并重启宿主。桌面端可与 Web 端共用或隔离各自的插件集
 - **系统通知**：宿主启动失败时桌面提醒
 - **深链 `dsh://`**：在浏览器或命令行打开 `dsh://…` 唤起并聚焦已有窗口（运行中与冷启动均支持）
 - **单实例**：重复启动自动唤起已有窗口，不另开进程
@@ -48,9 +50,10 @@ DeepSeek Harness Desktop 是一个**薄壳**，是 DeepSeek Harness 的非官方
 3. **日常操作**：
    - 主界面即 dsh 完整工作台，直接开始对话、使用工具。
    - **托盘**：左键单击切换窗口显示/隐藏；右键菜单可退出应用。
-   - **关闭窗口**：当前行为为退出应用（同时结束后台宿主进程）。
-   - **深链**：打开 `dsh://…` 会唤起本应用窗口。
-4. **数据与配置**：位于 `DSH_HOME`（默认 `~/.dsh`），与 dsh CLI / Web 版互相共用。
+   - **侧车模式**：托盘右键菜单选「切换为侧车模式」即可（窗口隐藏、托盘左键/菜单在默认浏览器打开原始 dsh），选择会被记住；也可直接编辑设置文件 `$DSH_HOME/desktop-settings.json` 的 `trayMode`（`true`/`false`）后重启应用。再次切换用托盘菜单「切换为窗口模式」。
+   - **关闭窗口**：窗口模式为退出应用（同时结束后台宿主进程）；侧车模式下关窗仅隐藏，退出请用托盘「退出」。
+   - **深链**：打开 `dsh://…` 会唤起本应用窗口（侧车模式下则打开浏览器）。
+4. **数据与配置**：位于 `DSH_HOME`（默认 `~/.dsh`），与 dsh CLI / Web 版互相共用；桌面端启动行为（`trayMode` 侧车模式、`profile` 启动的 dsh profile）设置在 `$DSH_HOME/desktop-settings.json`。
 
 ## 快速开始（开发）
 
@@ -164,13 +167,19 @@ node scripts/fetch-claude.mjs
 
 ### 升级上游deepseek-ai包（deepseek-harness 发版后）
 
+> ⚠️ **必须用 `--ref <git 标签>` 刷新清单**，不要对 `master` 直接对账：`master` 分支的
+> `docs/module-graph.md` 可能列出发布之后新增、**尚未发布到 npm** 的包（例如 `0.1.1-rc.2`
+> 的 `dsh-client-ui-chat` 等就是 npm E404），直接对账会让 `pnpm install` 报 404。
+> 标签名与 npm 版本号不同：npm 是 `0.1.1-rc.2`，对应 git 标签 `dsh-v0.1.1-rc.2`（见
+> deepseek-harness 仓库 releases）。
 
 ```bash
 # 1) 查看可用版本（先列出，挑一个再升级）
 node scripts/sync-deps.mjs --list
 
-# 2) 上游增删了包时，先重新生成清单（从 module-graph.md），再对账
-node scripts/sync-deps.mjs --refresh-manifest
+# 2) 上游增删了包时，用与上游版本对应的标签重新生成清单，再对账
+#    （--ref 填 git 标签，--version 填 npm 版本）
+node scripts/sync-deps.mjs --refresh-manifest --ref dsh-v<上游版本>
 
 # 3) 更新 @deepseek-ai/* 依赖版本（--sync 按 scripts/dsh-manifest.json 对账：补缺失 / 删残留 / 改版本）
 node scripts/sync-deps.mjs --version <deepseek-ai包版本> --sync
@@ -178,6 +187,26 @@ node scripts/sync-deps.mjs --version <deepseek-ai包版本> --sync
 # 4) 改完重新组装 + 打包
 pnpm build
 ```
+
+> 清单里仍可能有个别「图上存在但未发布」的包，脚本已把这类包加入 `EXCLUDE`（见
+> `scripts/sync-deps.mjs`）；`--sync` 对账时遇到 npm 404 会当场暴露，按同样方式处理即可。
+
+### 升级 cordis-plugin-group（特殊项，不随 dsh 走）
+
+`@deepseek-ai/cordis-plugin-group` 走**独立版本线**（`1.0.x`，与 dsh 的 `0.1.x` 无关），所以
+`--version <dsh版本> --sync` 时脚本会**自动把它对齐到 npm `latest`**，正常升级流程已覆盖，
+无需手动操作。
+
+只有当你**不想用 `latest`**（例如要钉 `next` 预发布或某个指定版本）时才需要手动：
+
+```bash
+# 编辑 scripts/sync-deps.mjs 的 SPECIAL，把值改成想钉的版本：
+#      '@deepseek-ai/cordis-plugin-group': '<指定版本>'
+# 之后 --sync 会保持它，不再对齐 latest。
+```
+
+> 原理：SPECIAL 是独立版本线条目；脚本对每个 SPECIAL 查 npm `dist-tags.latest`，
+> 当前值 ≠ latest 就自动 bump（网络查询失败会跳过并警告，不影响其余升级）。
 
 ### 修改应用版本（发版时）
 
