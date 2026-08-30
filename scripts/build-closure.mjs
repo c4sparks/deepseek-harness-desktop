@@ -291,7 +291,7 @@ function buildSource(opts) {
     name: 'deepseek-harness',
     version: srcVersion,
     private: true,
-    description: `源码通道依赖闭包：源码 ${src} 构建，file: 本地解析（${packed.length} 包）`,
+    description: `源码通道依赖闭包：从 deepseek-harness 源码构建，file: 解析（${packed.length} 包）`,
     dependencies: deps,
     overrides: { ...deps },
   }

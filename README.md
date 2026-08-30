@@ -1,20 +1,20 @@
 # DeepSeek Harness Desktop
 
-**DeepSeek Harness Desktop** —— 基于 **Tauri v2（Rust 外壳）+ Node sidecar** 的独立桌面应用。
+**基于 Tauri v2（Rust 外壳）+ Node sidecar 的独立桌面应用。**
 
-外壳负责窗口与系统集成；内嵌的 Node 宿主与 `dsh web` 运行**完全相同的引擎**，窗口内就是 dsh 完整的界面。浏览器形态的全部能力原样保留，一份代码、双端形态。
+外壳负责窗口与系统集成；内嵌的 Node 宿主与 `dsh web` 运行**完全相同的引擎**——窗口内就是 dsh 完整的界面。浏览器形态的全部能力原样保留，一份代码、双端形态。
 
-> 文档索引：使用见 [使用指南](./docs/使用指南.md)｜构建见「快速开始」｜原理/排障见 [FAQ](./docs/FAQ.md)｜
-> 发布见 [部署与发布](./docs/部署与发布.md)｜贡献见 [CONTRIBUTING](./docs/CONTRIBUTING.md)｜
-> 改动点见 [CHANGELOG.md](./CHANGELOG.md)。
+**文档导航**：使用指南 [使用指南](./docs/使用指南.md) · 原理/排障 [FAQ](./docs/FAQ.md) · 发布 [部署与发布](./docs/部署与发布.md) · 贡献 [CONTRIBUTING](./docs/CONTRIBUTING.md) · 改动点 [CHANGELOG](./CHANGELOG.md)
 
 ## 与 DeepSeek Harness 的关系
 
 DeepSeek Harness Desktop 是**薄壳**（非官方桌面发行版）：自身只有 Rust 外壳（窗口/托盘/进程管理）+ 打包逻辑，
-**全部能力来自 deepseek-harness 的 npm 包**（`@deepseek-ai/*`：宿主 `@deepseek-ai/dsh` + 约 200 插件），由
-sidecar 组装为宿主包。能力跟随锁定的 `@deepseek-ai/*` 版本；依赖经**依赖闭包**
-（`deepseek-harness/package.json`）统一管理，两条更新通道（**npm 通道**锁已发布版本 / **源码通道**跟随
-源码）从这里取依赖。当前版本与升级改动点见 [CHANGELOG.md](./CHANGELOG.md)。
+**全部能力来自 deepseek-harness 的 `@deepseek-ai/*` 包族**（宿主 `@deepseek-ai/dsh` + 一批插件），由
+sidecar 组装为宿主包。能力跟随锁定的 `@deepseek-ai/*` 版本，依赖经**依赖闭包**统一管理：
+
+- **依赖闭包**：`deepseek-harness/package.json`——两条更新通道从这里取依赖
+  - **npm 通道**：锁已发布版本
+  - **源码通道**：从本地 deepseek-harness 源码构建闭包
 
 ## 功能特性
 

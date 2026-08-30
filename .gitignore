@@ -3,9 +3,11 @@
 resources/
 node_modules
 
-# dependency closure dir: track the dir (.gitkeep), ignore generated contents
+# dependency closure dir: commit the closure package.json (npm-mode fresh
+# clone can install), ignore generated tgz archives (source-mode build output)
 deepseek-harness/*
-!deepseek-harness/.gitkeep
+!deepseek-harness/package.json
+deepseek-harness/tgz/
 
 # generated assets
 native/target/
