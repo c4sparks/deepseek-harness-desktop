@@ -13,8 +13,8 @@
  *   node scripts/sync-deps.mjs --version <上游版本> --sync           # ... + reconcile against scripts/dsh-manifest.json (add missing / drop stale)
  *   node scripts/sync-deps.mjs --version <上游版本> --remove @deepseek-ai/dsh-e2b
  *   node scripts/sync-deps.mjs --version <上游版本> --dry-run        # preview, write nothing
- *   node scripts/sync-deps.mjs --app-version <上游版本>              # bump the app's own version (package.json + tauri.conf.json + Cargo.toml)
  *   node scripts/sync-deps.mjs --list                               # list available @deepseek-ai/dsh versions
+ * （项目应用版本同步已拆到 scripts/bump-version.mjs，与本脚本解耦）
  *   node scripts/sync-deps.mjs --refresh-manifest [--ref <git-ref>] # regenerate scripts/dsh-manifest.json from module-graph.md (default: master;
  *                                                                   #  pass the release tag, e.g. dsh-v0.1.1-rc.2, to match a published release —
  *                                                                   #  master can list packages that were never published)
@@ -76,11 +76,11 @@ const EXCLUDE = new Set([
 ])
 
 function parseArgs(argv) {
-  const opts = { version: undefined, appVersion: undefined, sync: false, refreshManifest: false, list: false, remove: [], dryRun: false, ref: 'master' }
+  const opts = { version: undefined, sync: false, refreshManifest: false, list: false, remove: [], dryRun: false, ref: 'master' }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
-    if (a === '--version') opts.version = argv[++i]
-    else if (a === '--app-version') opts.appVersion = argv[++i]
+    if (a === '--') continue // pnpm run -- 传参时透传的裸 --
+    else if (a === '--version') opts.version = argv[++i]
     else if (a === '--ref') opts.ref = argv[++i]
     else if (a === '--sync') opts.sync = true
     else if (a === '--refresh-manifest') opts.refreshManifest = true
@@ -202,68 +202,14 @@ function listVersions() {
   return 0
 }
 
-function bumpAppVersion(newVer, dryRun) {
-  const root = resolve(HERE, '..')
-  const edits = []
-
-  // package.json
-  const pkg = JSON.parse(readFileSync(PKG_PATH, 'utf8'))
-  if (pkg.version !== newVer) edits.push({ file: 'package.json', from: pkg.version, to: newVer })
-  pkg.version = newVer
-  if (!dryRun) writeFileSync(PKG_PATH, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
-
-  // native/tauri.conf.json
-  const confPath = join(root, 'native', 'tauri.conf.json')
-  const conf = JSON.parse(readFileSync(confPath, 'utf8'))
-  if (conf.version !== newVer) edits.push({ file: 'native/tauri.conf.json', from: conf.version, to: newVer })
-  conf.version = newVer
-  if (!dryRun) writeFileSync(confPath, JSON.stringify(conf, null, 2) + '\n', 'utf8')
-
-  // native/Cargo.toml — first top-level `version = "…"` (the [package] one)
-  const cargoPath = join(root, 'native', 'Cargo.toml')
-  const cargo = readFileSync(cargoPath, 'utf8')
-  const cm = /^version\s*=\s*"([^"]+)"/m.exec(cargo)
-  if (cm && cm[1] !== newVer) edits.push({ file: 'native/Cargo.toml', from: cm[1], to: newVer })
-  if (!dryRun) writeFileSync(cargoPath, cargo.replace(/^version\s*=\s*"[^"]+"/m, `version = "${newVer}"`), 'utf8')
-
-  // native/Cargo.lock — root package version (cargo would regenerate anyway)
-  const lockPath = join(root, 'native', 'Cargo.lock')
-  const lock = readFileSync(lockPath, 'utf8')
-  const lm = new RegExp(`name = "${pkg.name}"\\nversion = "([^"]+)"`).exec(lock)
-  if (lm && lm[1] !== newVer) edits.push({ file: 'native/Cargo.lock', from: lm[1], to: newVer })
-  if (!dryRun && lm) {
-    writeFileSync(
-      lockPath,
-      lock.replace(new RegExp(`name = "${pkg.name}"\\nversion = "[^"]+"`), `name = "${pkg.name}"\nversion = "${newVer}"`),
-      'utf8',
-    )
-  }
-
-  if (edits.length === 0) {
-    console.log(`bump-version: ${newVer} already in place`)
-    return 0
-  }
-  console.log(`bump-version: ${edits.length} file(s) -> ${newVer}`)
-  for (const e of edits) console.log(`  ${e.file}  ${e.from} -> ${e.to}`)
-  if (dryRun) {
-    console.log('\nbump-version: --dry-run, nothing written')
-    return 0
-  }
-  console.log('\nbump-version: done')
-  return 0
-}
-
 async function main() {
   let opts
   try {
     opts = parseArgs(process.argv.slice(2))
   } catch (e) {
     console.error(`sync-deps: ${e.message}`)
-    console.error('usage: node scripts/sync-deps.mjs --version <v> [--sync] [--remove <name>...] [--dry-run] | --app-version <v> | --refresh-manifest')
+    console.error('usage: node scripts/sync-deps.mjs --version <v> [--sync] [--remove <name>...] [--dry-run] | --refresh-manifest | --list')
     return 2
-  }
-  if (opts.appVersion) {
-    return bumpAppVersion(opts.appVersion, opts.dryRun)
   }
   if (opts.refreshManifest) {
     return refreshManifest(opts.dryRun, opts.ref)
@@ -272,7 +218,7 @@ async function main() {
     return listVersions()
   }
   if (!opts.version) {
-    console.error('sync-deps: --version (dep version), --app-version (app version), --list, or --refresh-manifest is required')
+    console.error('sync-deps: --version (dep version), --list, or --refresh-manifest is required')
     return 2
   }
 

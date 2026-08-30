@@ -79,16 +79,19 @@ fn emit_status(app: &tauri::AppHandle, status: SidecarStatus) {
     let _ = app.emit_to("main", STATUS_EVENT, status);
 }
 
-/// Parse `dsh web: http://127.0.0.1:<port>` into the local URL.
+/// Parse `dsh web: http://127.0.0.1:<port>?token=<launchToken>` into the local URL.
+///
+/// 必须保留完整的 URL（含 `?token=` 认证参数）：dsh 0.1.2-alpha.1 起用浏览器认证——客户端
+/// 打开带 launch token 的根 URL 才会被签发 session cookie；缺 token 会收到 401
+/// 「authentication required; reopen the URL printed by dsh web」。
 fn readiness_url(line: &str) -> Option<String> {
     let marker = "http://127.0.0.1:";
     let idx = line.find(marker)?;
-    let rest = &line[idx + marker.len()..];
-    let port: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-    if port.is_empty() {
-        None
+    let url = line[idx..].trim();
+    if url.starts_with("http://127.0.0.1:") {
+        Some(url.to_string())
     } else {
-        Some(format!("http://127.0.0.1:{port}"))
+        None
     }
 }
 
@@ -358,6 +361,21 @@ fn show_dsh_window(app: &tauri::AppHandle) {
     }
 }
 
+/// 把 `~/.dsh/bin` 前置到 PATH（给 sidecar 进程用）。
+/// fetch-claude 下载的 claude 在这里，dsh-subagent-claude-code 从 PATH 解析——
+/// 这样普通用户无需配置系统 PATH，claude 也能被找到。
+fn sidecar_path_prefixed(app: &tauri::AppHandle) -> String {
+    let dsh_bin = dsh_home(app)
+        .map(|h| h.join("bin"))
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let cur = std::env::var("PATH").unwrap_or_default();
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    if dsh_bin.is_empty() { return cur }
+    if cur.is_empty() { return dsh_bin }
+    format!("{dsh_bin}{sep}{cur}")
+}
+
 /// Spawn the sidecar (the `attempt`-th try, 0-based), wait for the readiness
 /// line, navigate the main window, then keep watching so a crash after
 /// navigation can also be recovered. On failure and when the app is not
@@ -398,6 +416,11 @@ fn start_sidecar(app: tauri::AppHandle, attempt: u32) {
         // ready unless told not to; the shell embeds its own WebView, so the
         // browser must never pop up.
         let spawned = sidecar
+            // 把 ~/.dsh/bin 前置到 sidecar 的 PATH：fetch-claude 下载的 claude 在这里，
+            // dsh-subagent-claude-code 从 PATH 解析——无需用户配置系统 PATH。
+            .env("PATH", sidecar_path_prefixed(&app))
+            // CODEX_BIN：dsh-subagent-codex 经 patch 优先用它（fetch-codex 下载的 codex）。
+            .env("CODEX_BIN", codex_bin_path(&app))
             .args([
                 host_arg,
                 "--profile".to_string(),
@@ -764,6 +787,84 @@ fn notify_error(app: &tauri::AppHandle, message: &str) {
     }
 }
 
+/// UTC 时间戳（ISO），用于运行日志。
+fn utc_stamp() -> String {
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let (days, rem) = (secs / 86400, secs % 86400);
+    let (hh, mi, ss) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    let z = days as i64 + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y0 = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let (y, m) = if mp < 10 { (y0, mp + 3) } else { (y0 + 1, mp - 9) };
+    format!("{y:04}-{m:02}-{d:02} {hh:02}:{mi:02}:{ss:02}")
+}
+
+/// 追加一行运行日志到 `~/.dsh/logs/desktop.log`（best-effort，与 fetch 脚本同一文件）。
+fn append_shell_log(msg: &str) {
+    use std::io::Write;
+    let home = std::env::var("DSH_HOME").ok().filter(|h| !h.is_empty())
+        .or_else(|| std::env::var("USERPROFILE").ok().or_else(|| std::env::var("HOME").ok()))
+        .map(std::path::PathBuf::from);
+    let Some(home) = home else { return };
+    let log = home.join(".dsh").join("logs").join("desktop.log");
+    if let Some(dir) = log.parent() { let _ = std::fs::create_dir_all(dir); }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(log) {
+        let _ = writeln!(f, "[{}] [INFO] desktop: {msg}", utc_stamp());
+    }
+}
+
+/// 后台静默按需安装 claude / codex（best-effort，失败不影响主程序）。
+/// 安装包内带 `fetch-claude.mjs` / `fetch-codex.mjs`（bundle.resources），启动时用 sidecar 自带
+/// node 跑 `--auto`：脚本自探测——已有（claude 在 PATH、codex 在 CODEX_BIN/~/.dsh/bin）就跳过，
+/// 没有才下载到 `~/.dsh/bin`。无网络 / 下载失败仅意味着对应子 agent 暂不可用，主程序照常。
+fn maybe_fetch_tools(app: &tauri::AppHandle) {
+    for script_name in ["fetch-claude.mjs", "fetch-codex.mjs"] {
+        let script = match app.path().resource_dir() {
+            Ok(d) => d.join(script_name),
+            Err(_) => continue,
+        };
+        if !script.exists() {
+            continue; // 旧安装包未带脚本 → 跳过
+        }
+        append_shell_log(&format!("后台检查 {} 可用性", script_name.strip_suffix(".mjs").unwrap_or(&script_name)));
+        let lossy = script.to_string_lossy();
+        let script_arg = lossy.strip_prefix(r"\\?\").unwrap_or(&lossy).to_string();
+        let app2 = app.clone();
+        tauri::async_runtime::spawn(async move {
+            // sidecar 是重命名的 node.exe：`dsh-host <script> --auto` 即以 node 运行该脚本。
+            if let Ok(cmd) = app2.shell().sidecar("dsh-host") {
+                let _ = cmd.args([script_arg.as_str(), "--auto"]).spawn();
+            }
+        });
+    }
+}
+
+/// 平台 triple（与 fetch-codex 的 vendor/<triple>/ 目录一致）。
+fn codex_triple() -> &'static str {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", "x86_64") => "x86_64-pc-windows-msvc",
+        ("windows", "aarch64") => "aarch64-pc-windows-msvc",
+        ("macos", "x86_64") => "x86_64-apple-darwin",
+        ("macos", "aarch64") => "aarch64-apple-darwin",
+        ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
+        ("linux", "aarch64") => "aarch64-unknown-linux-gnu",
+        _ => "",
+    }
+}
+
+/// `~/.dsh/codex/vendor/<triple>/bin/codex(.exe)`，注入 sidecar 的 CODEX_BIN
+/// （dsh-subagent-codex 经 patch 优先用它；fetch-codex 复制完整平台包到 ~/.dsh/codex/）。 */
+fn codex_bin_path(app: &tauri::AppHandle) -> String {
+    let Some(home) = dsh_home(app) else { return String::new() };
+    let bin = if cfg!(windows) { "codex.exe" } else { "codex" };
+    home.join("codex").join("vendor").join(codex_triple()).join("bin").join(bin).to_string_lossy().to_string()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -837,6 +938,7 @@ pub fn run() {
                 }
             }
             start_sidecar(app_handle, 0);
+            maybe_fetch_tools(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -3,6 +3,10 @@
 resources/
 node_modules
 
+# dependency closure dir: track the dir (.gitkeep), ignore generated contents
+deepseek-harness/*
+!deepseek-harness/.gitkeep
+
 # generated assets
 native/target/
 # machine-local cargo target-dir override (absolute path; see config.toml)
@@ -16,3 +20,5 @@ Thumbs.db
 
 .claude
 .codegraph
+tmp
+

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "deepseek-harness-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.deepseek.dsh-desktop",
   "build": {
     "frontendDist": "../src"
@@ -29,18 +29,24 @@
     "shell": {},
     "deep-link": {
       "desktop": {
-        "schemes": ["dsh"]
+        "schemes": [
+          "dsh"
+        ]
       }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "externalBin": [
       "binaries/dsh-host"
     ],
     "resources": {
-      "../resources/app": "dsh-host/app"
+      "../resources/app": "dsh-host/app",
+      "../scripts/fetch-claude.mjs": "fetch-claude.mjs",
+      "../scripts/fetch-codex.mjs": "fetch-codex.mjs"
     },
     "icon": [
       "icons/32x32.png",

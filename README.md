@@ -4,15 +4,17 @@
 
 外壳负责窗口与系统集成；内嵌的 Node 宿主与 `dsh web` 运行**完全相同的引擎**，窗口内就是 dsh 完整的界面。浏览器形态的全部能力原样保留，一份代码、双端形态。
 
+> 文档索引：使用见 [使用指南](./docs/使用指南.md)｜构建见「快速开始」｜原理/排障见 [FAQ](./docs/FAQ.md)｜
+> 发布见 [部署与发布](./docs/部署与发布.md)｜贡献见 [CONTRIBUTING](./docs/CONTRIBUTING.md)｜
+> 改动点见 [CHANGELOG.md](./CHANGELOG.md)。
+
 ## 与 DeepSeek Harness 的关系
 
-DeepSeek Harness Desktop 是一个**薄壳**，是 DeepSeek Harness 的非官方桌面发行版：自身只包含 Rust 外壳（窗口、托盘、进程管理）与打包逻辑，**全部功能能力来自 deepseek-harness 发布的 npm 包**（`@deepseek-ai/*`：宿主 `@deepseek-ai/dsh` + 约 200 个插件），运行时由 sidecar 组装为宿主包（`resources/app`）。
-
-这意味着：
-
-- **能力跟随上游**：桌面端能做什么，取决于锁定的 `@deepseek-ai/*` 版本。deepseek-harness 发新版前，桌面端不会自动获得新功能或修复。
-- **不实时联动源码**：桌面端不随 deepseek-harness 仓库源码更新而更新。升级靠一条命令更新依赖（见「快速开始」的「升级上游」）：`node scripts/sync-deps.mjs --version <上游版本>` → 重新组装 sidecar 与宿主包 → 重新打包。
-- **版本锁定**：`@deepseek-ai/*@0.1.1-rc.2`（211 个）+ `@deepseek-ai/cordis-plugin-group@1.0.1`，固定精确版本以保证可复现安装。
+DeepSeek Harness Desktop 是**薄壳**（非官方桌面发行版）：自身只有 Rust 外壳（窗口/托盘/进程管理）+ 打包逻辑，
+**全部能力来自 deepseek-harness 的 npm 包**（`@deepseek-ai/*`：宿主 `@deepseek-ai/dsh` + 约 200 插件），由
+sidecar 组装为宿主包。能力跟随锁定的 `@deepseek-ai/*` 版本；依赖经**依赖闭包**
+（`deepseek-harness/package.json`）统一管理，两条更新通道（**npm 通道**锁已发布版本 / **源码通道**跟随
+源码）从这里取依赖。当前版本与升级改动点见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 功能特性
 
@@ -47,6 +49,9 @@ DeepSeek Harness Desktop 是一个**薄壳**，是 DeepSeek Harness 的非官方
 
 1. **安装**：运行 Windows 安装包（`deepseek-harness-desktop_<版本>_x64-setup.exe`，NSIS）。
 2. **启动**：从开始菜单或桌面快捷方式打开。首次启动先显示加载页，就绪后自动进入完整界面。
+   > ⚠️ **首次启动会在后台自动安装部分可选依赖**（"Claude Code 子 agent"的 claude、"codex 子 agent"的
+   > codex，需联网）。已下载后不会重复下载。**下载失败不影响主程序**——只是对应子 agent
+   > 暂不可用，可查日志 `~/.dsh/logs/desktop.log` 看原因。
 3. **日常操作**：
    - 主界面即 dsh 完整工作台，直接开始对话、使用工具。
    - **托盘**：左键单击切换窗口显示/隐藏；右键菜单可退出应用。
@@ -57,165 +62,62 @@ DeepSeek Harness Desktop 是一个**薄壳**，是 DeepSeek Harness 的非官方
 
 ## 快速开始（开发）
 
-> 三平台共用同一套构建流程，差异只在「工具链前置」和「打包命令」。下面先给**通用步骤**，再按平台列**特定差异**。
-
-> ⚠️ `native/binaries/`（sidecar）与 `resources/app/`（宿主包）是**构建产物**，已 gitignore，**仓库里没有**——首次运行前必须先组装。
-
-### 一、通用步骤（三平台相同）
-
-**前置**：Rust、Node.js ≥ 22、pnpm。
+> 前置：Rust、Node.js ≥ 22、pnpm。各平台前置依赖见 [FAQ](./docs/FAQ.md)「构建环境」。
 
 ```bash
 # 1) 安装依赖
 pnpm install
 
-# 2) 组装 sidecar + 宿主包（首次必做；需要一个本地 Node ≥ 22 可执行文件）
+# 2) 组装 sidecar + 宿主包（首次必做；--node-bin 填本机 Node ≥ 22 路径）
 node scripts/package-sidecar.mjs --node-bin <本平台 Node 路径>
 
-# 3) 开发模式启动（编译 Rust 壳并拉起 sidecar）
+# 3) 开发模式启动
 pnpm dev
 ```
 
-说明：
+### 打包（平台差异只在打包命令）
 
-- `--node-bin` 需要一个本机 Node ≥ 22 可执行文件（`@deepseek-ai/dsh` 的 engines 要求）；脚本不会自动下载 Node。`--triple <目标>` 默认取当前平台，也可显式指定目标平台（分平台裁剪会跟随该目标），Windows x64 可不传。
-- 修改宿主依赖后需重跑第 2 步（会重建 `resources/app`，较慢）。
-- 首次 `pnpm dev` 会编译 Rust 壳，需较长时间属正常。
+| 平台 | 打包 | 产物 |
+|---|---|---|
+| Windows | `pnpm build` | NSIS 安装包 |
+| macOS | `cd native && tauri build --bundles dmg` | .app + dmg |
+| Linux | `cd native && tauri build --bundles deb appimage` | deb + AppImage |
 
-### 二、各平台特定步骤
+> ⚠️ sidecar + 宿主必须在目标平台本机组装（原生模块按平台编译）；`pnpm build` 是 Windows 专属（`bundle.targets` 为 nsis）。
 
-#### Windows
-
-**补充前置**：Rust **MSVC 工具链**（含 VS Build Tools C++ 工作负载）；Git Bash 通常需手动补 PATH：
-
-```bash
-export PATH="$HOME/.cargo/bin:$PATH"
-```
-
-> 不用 Git Bash？等价写法：
-> - **cmd**：`set PATH=%USERPROFILE%\.cargo\bin;%PATH%`
-> - **PowerShell**：`$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"`
->
-> 提示：rustup 安装时通常已把 `%USERPROFILE%\.cargo\bin` 写入用户 PATH，只有 Git Bash 在 rustup 安装**之后**才打开（PATH 未刷新）时才需要手动补。
+### 升级（npm 通道，deepseek-harness 发版后）
 
 ```bash
-# 组装 sidecar（node 为 .exe）
-node scripts/package-sidecar.mjs --node-bin /path/to/node.exe
-
-pnpm dev
-
-# 打包 Windows NSIS 安装包（会重新组装 sidecar + 宿主包，较慢）
-pnpm build
+pnpm run sync:list                                     # ① 查看可用版本
+pnpm run sync:manifest -- --ref dsh-v<版本>            # ② 上游增删包时刷清单（必须用 git 标签，别用 master）
+pnpm run build:closure -- --version <新版本> --sync   # ③ 生成 npm 模式闭包
+pnpm build                                             # ④ 重新组装 + 打包
 ```
 
-#### macOS
-
-**补充前置**：`xcode-select --install`（Xcode 命令行工具）。
+### 源码通道（跟随 deepseek-harness 源码）
 
 ```bash
-# 组装 sidecar（node 无扩展名）
-node scripts/package-sidecar.mjs --node-bin $(which node)
-
-pnpm dev
-
-# 打包（.app + dmg）
-cd native && tauri build --bundles dmg
+node scripts/build-closure.mjs --source <源码目录>     # ① 生成 source 模式闭包（源码目录需已构建）
+pnpm build                                             # ② 统一打包（组装宿主 + 出安装包）
 ```
 
-#### Linux
+**切换通道 = 重跑 `build-closure` 对应模式，然后统一 `pnpm build`**：
 
-**补充前置**：
+- **npm 通道**（正式版，用已发布版本）：`pnpm run build:closure -- --version <版本> --sync` → `pnpm build`
+- **源码通道**（最新源码）：`node scripts/build-closure.mjs --source <源码目录>` → `pnpm build`
 
-```bash
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-```
-
-```bash
-# 组装 sidecar（node 无扩展名）
-node scripts/package-sidecar.mjs --node-bin $(which node)
-
-pnpm dev
-
-# 打包（deb + AppImage）
-cd native && tauri build --bundles deb appimage
-```
-
-### 三、可选：启用"Claude Code 子 agent"（按需）
-
-安装包不含 Claude 二进制（原因见「注意事项」）。需要"Claude Code 子 agent"功能的机器按需启用：
-
-```bash
-# 1) 把真实 claude 装到 ~/.dsh/bin
-node scripts/fetch-claude.mjs
-
-# 2) 把 ~/.dsh/bin 加到 PATH 最前（否则 npm 的 claude.cmd shim 先被命中 → 启动报 EINVAL）
-```
-
-完成后 dsh 即可从 PATH 解析 claude 并启用该子 agent。
-
-### 四、注意事项
-
-- **组装 sidecar + 宿主包必须在目标平台本机执行**：`npm install` 会把 node-pty / koffi 等原生模块按**当前平台**编译，跨平台不通用。
-- **跨平台交叉出包不可行**（在 Windows 打 mac / Linux 包），需在对应平台本机或 CI 构建。
-- **macOS / Linux 不要直接跑 `pnpm build`**（内部是裸 `tauri build`）：`native/tauri.conf.json` 的 `bundle.targets` 目前为 `["nsis"]`（Windows 专属），会按 nsis 出包、不产出 dmg / deb / AppImage，且 `package-sidecar.mjs` 缺 `--node-bin` 时没有 node 来源。要么用 `--bundles` 覆盖，要么把 `bundle.targets` 改为目标平台（如 `["dmg"]` / `["deb","appimage"]`）。
-- **打包路径超限（Windows）**：npm 扁平 bundle 的深层 `.map` / `.d.ts`（传递依赖）在长项目路径下可能超 Windows MAX_PATH(260)，makensis 会中止打包（`failed opening file …`）。`scripts/package-sidecar.mjs` 已在 `npm install` 后自动清理这些运行时不需要的文件；如仍报错，多半是项目路径过长（换短路径）或存在其他超长路径文件。
-- **Claude Agent SDK 外部化**：`@anthropic-ai/claude-agent-sdk-*` 平台二进制文件，不打进安装包——`dsh-subagent-claude-code` 插件从 PATH 解析 `claude` 并作为 `pathToClaudeCodeExecutable` 交给 SDK，不使用内置包（实测 SDK 需要真实可执行文件，npm 的 `.cmd` shim 会 `spawn EINVAL`）。需要"Claude Code 子 agent"功能的机器运行 `node scripts/fetch-claude.mjs` 把 claude 装到 `~/.dsh/bin` 并加入 PATH 最前。
-- `native/.cargo/config.toml`（本地盘 target 重定向）是 Windows **本机专属**配置，已被 gitignore；macOS / Linux 没有该文件，cargo 默认用 `native/target/`，无需处理。
-- macOS / Linux 的 sidecar 是重命名后的 node 可执行文件，需具备可执行权限（`--node-bin` 指向的 node 自带，复制后一般保留；异常时可 `chmod +x native/binaries/dsh-host-*`）。
-- `native/icons/` 已含各平台图标（icns / png），无需重新生成。
-- 打包出的**正式分发包**仍需代码签名 / 公证；本地打包验证不需要。
-
-### 升级上游deepseek-ai包（deepseek-harness 发版后）
-
-> ⚠️ **必须用 `--ref <git 标签>` 刷新清单**，不要对 `master` 直接对账：`master` 分支的
-> `docs/module-graph.md` 可能列出发布之后新增、**尚未发布到 npm** 的包（例如 `0.1.1-rc.2`
-> 的 `dsh-client-ui-chat` 等就是 npm E404），直接对账会让 `pnpm install` 报 404。
-> 标签名与 npm 版本号不同：npm 是 `0.1.1-rc.2`，对应 git 标签 `dsh-v0.1.1-rc.2`（见
-> deepseek-harness 仓库 releases）。
-
-```bash
-# 1) 查看可用版本（先列出，挑一个再升级）
-node scripts/sync-deps.mjs --list
-
-# 2) 上游增删了包时，用与上游版本对应的标签重新生成清单，再对账
-#    （--ref 填 git 标签，--version 填 npm 版本）
-node scripts/sync-deps.mjs --refresh-manifest --ref dsh-v<上游版本>
-
-# 3) 更新 @deepseek-ai/* 依赖版本（--sync 按 scripts/dsh-manifest.json 对账：补缺失 / 删残留 / 改版本）
-node scripts/sync-deps.mjs --version <deepseek-ai包版本> --sync
-
-# 4) 改完重新组装 + 打包
-pnpm build
-```
-
-> 清单里仍可能有个别「图上存在但未发布」的包，脚本已把这类包加入 `EXCLUDE`（见
-> `scripts/sync-deps.mjs`）；`--sync` 对账时遇到 npm 404 会当场暴露，按同样方式处理即可。
-
-### 升级 cordis-plugin-group（特殊项，不随 dsh 走）
-
-`@deepseek-ai/cordis-plugin-group` 走**独立版本线**（`1.0.x`，与 dsh 的 `0.1.x` 无关），所以
-`--version <dsh版本> --sync` 时脚本会**自动把它对齐到 npm `latest`**，正常升级流程已覆盖，
-无需手动操作。
-
-只有当你**不想用 `latest`**（例如要钉 `next` 预发布或某个指定版本）时才需要手动：
-
-```bash
-# 编辑 scripts/sync-deps.mjs 的 SPECIAL，把值改成想钉的版本：
-#      '@deepseek-ai/cordis-plugin-group': '<指定版本>'
-# 之后 --sync 会保持它，不再对齐 latest。
-```
-
-> 原理：SPECIAL 是独立版本线条目；脚本对每个 SPECIAL 查 npm `dist-tags.latest`，
-> 当前值 ≠ latest 就自动 bump（网络查询失败会跳过并警告，不影响其余升级）。
+> 两条通道**唯一区别**是 `build-closure` 的入参（`--version` 用 npm / `--source` 用源码），组装和打包完全相同（`pnpm build`）。
+> 两通道**共享 `~/.dsh`**：源码版仅向前（试用前备份 `~/.dsh`）、别同时跑两个通道。日常/发布用 npm 通道，追最新源码用源码通道。
 
 ### 修改应用版本（发版时）
 
 ```bash
-# 应用自身版本（package.json / tauri.conf.json / Cargo.toml / Cargo.lock 四处同步）
-node scripts/sync-deps.mjs --app-version <应用新版本>
+node scripts/bump-version.mjs <新版本>   # 提前执行：同步 package.json/tauri.conf.json/Cargo.toml/Cargo.lock
+pnpm build                               # build 只打包，不改版本
 ```
 
-> `--dry-run` 可先预览不改文件。依赖版本 `--version` 与应用版本 `--app-version` 互不干扰。
+> 版本格式 `x.y.z`（可带 `-rc.N`/`-alpha.N`/`-beta.N`），非法拒绝写入；**低于当前版本会警告 + 确认**
+> （`--yes` 放行）。本地便利入口 `pnpm build:local`：打包前检查版本一致性。
 
 ## 目录结构
 
@@ -226,7 +128,9 @@ dsh-desktop/
 │   ├── binaries/   # sidecar 二进制（dsh-host，构建时生成）
 │   └── icons/      # 应用图标（构建时生成，源图在 assets/）
 ├── assets/         # 设计源资产（图标源图 app-icon.png）
-├── scripts/        # 构建脚本（sidecar 打包）
+├── scripts/        # 构建/维护脚本（package-sidecar / build-closure / bump-version / build-local / sync-deps / fetch-claude / fetch-codex / apply-codex-shrink / dsh-releases.json / lib）
+├── deepseek-harness/  # 依赖闭包（build-closure.mjs 生成，已 gitignore）
+├── .npmrc          # pnpm 配置（verify-deps-before-run=false，关预校验）
 └── resources/app   # 宿主包（构建时生成）
 ```
 

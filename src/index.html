@@ -9,12 +9,16 @@
   <title>DeepSeek Harness Desktop</title>
   <style>
     :root {
-      color-scheme: light dark;
+      color-scheme: dark;
+      --bg: #07090f;
+      --accent: #4d9fff;
+      --text: #e6edf3;
+      --dim: #8b949e;
     }
     * { box-sizing: border-box; }
     /* `#error`/`#loading` set `display: flex`, which overrides the UA rule
        `[hidden] { display: none }` and would render the error panel (and the
-       loading spinner) even when they should be hidden. Restore `hidden` so
+       loading mark) even when they should be hidden. Restore `hidden` so
        shell.js's hidden-toggling works as intended. */
     [hidden] { display: none !important; }
     body {
@@ -24,21 +28,49 @@
       align-items: center;
       justify-content: center;
       flex-direction: column;
-      gap: 16px;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(560px 380px at 50% 36%, rgba(77, 159, 255, 0.12), transparent 72%),
+        linear-gradient(180deg, #0b1019 0%, var(--bg) 55%, #05070c 100%);
+      overflow: hidden;
     }
-    .spinner {
-      width: 40px;
-      height: 40px;
-      border: 4px solid rgba(255, 255, 255, 0.15);
-      border-top-color: #4d9fff;
-      border-radius: 50%;
-      animation: spin 0.9s linear infinite;
+
+    /* 签名：雷达脉冲 —— 圆心"正在启动 + 产品名" + 三环扩散，传达"工作区正在上线" */
+    #loading { display: flex; flex-direction: column; align-items: center; gap: 26px; }
+    .radar {
+      position: relative; width: 200px; height: 200px;
+      display: flex; align-items: center; justify-content: center;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .hint { font-size: 13px; color: #8b949e; }
+    .radar-label {
+      position: relative; z-index: 1; /* 在绝对定位的环之上 */
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+    }
+    .radar-title {
+      font-size: 13px; font-weight: 600; color: var(--accent);
+      letter-spacing: 0.14em; text-indent: 0.14em; /* 抵消 letter-spacing 尾距，视觉居中 */
+      animation: breathe 2.4s ease-in-out infinite;
+    }
+    .radar-sub {
+      font-size: 11px; color: var(--dim);
+      letter-spacing: 0.08em; white-space: nowrap;
+    }
+    .radar-ring {
+      position: absolute; inset: 0; margin: auto;
+      width: 176px; height: 176px; border-radius: 50%;
+      border: 1.5px solid var(--accent);
+      animation: ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+    .radar-ring:nth-child(2) { animation-delay: 1.2s; }
+    @keyframes ping {
+      0%   { transform: scale(1); opacity: 0.7; }
+      80%, 100% { transform: scale(2.1); opacity: 0; }
+    }
+    @keyframes breathe {
+      0%, 100% { opacity: 0.55; }
+      50%      { opacity: 1; }
+    }
+
     #error {
       max-width: 460px;
       display: flex;
@@ -50,34 +82,43 @@
     #error-title { font-size: 16px; font-weight: 600; }
     #error-msg {
       font-size: 13px;
-      color: #8b949e;
+      color: var(--dim);
       word-break: break-all;
       line-height: 1.5;
     }
     #retry-btn {
       margin-top: 8px;
-      padding: 8px 20px;
+      padding: 8px 22px;
       font-size: 13px;
       font-family: inherit;
-      color: #e6edf3;
+      color: var(--text);
       background: #1f6feb;
       border: none;
       border-radius: 6px;
       cursor: pointer;
     }
     #retry-btn:hover { background: #388bfd; }
-    #loading { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+    #retry-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .radar-ring { animation: none; opacity: 0.4; }
+    }
   </style>
 </head>
 <body>
   <div id="loading">
-    <div class="spinner" aria-hidden="true"></div>
-    <div>正在启动 dsh…</div>
-    <div class="hint">DeepSeek Harness Desktop</div>
+    <div class="radar">
+      <div class="radar-ring" aria-hidden="true"></div>
+      <div class="radar-ring" aria-hidden="true"></div>
+      <div class="radar-label">
+        <div class="radar-title">正在启动</div>
+        <div class="radar-sub">DeepSeek Harness Desktop</div>
+      </div>
+    </div>
   </div>
   <div id="error" hidden>
     <div id="error-title">启动失败</div>
-    <div id="error-msg" class="hint"></div>
+    <div id="error-msg"></div>
     <button id="retry-btn">重试</button>
   </div>
   <script type="module" src="./shell.js"></script>
