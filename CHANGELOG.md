@@ -8,6 +8,21 @@
 > - 建议分节：新增 / 变更 / 修复 / 依赖升级 / 升级要点。
 > - 发版顺序：先 `bump-version <新版本>` → 更新 CHANGELOG 顶部该版本条目 → `pnpm build:local`（校验一致性）。
 
+## [0.2.1]（2026-09-01）— 依赖升级 dsh 0.1.2-alpha.3
+**发版概要**
+- **dsh 依赖**：`0.1.2-alpha.3`
+- **源码通道**基于 deepseek-harness 源码 `0.1.2-alpha.3`（file: 本地解析，248 包）
+- **包变化**：248 → 248（+0）；新增 0 包 / 移除 0 包 / 版本变更 0 个
+- **应用版本**：`0.2.0` → `0.2.1`
+- 源码目录：`E:\workspace\github_project\AI\other_dsh_plugins\0.1.2-alpha.3\deepseek-harness`
+**提交信息（模板）**
+```bash
+git add -A && git commit -m "build(deps): upgrade deepseek-harness to 0.1.2-alpha.3 (source) and app to 0.2.1"
+```
+**升级要点**
+- 一键发版：`node scripts/quick-release.mjs`（或 `pnpm quick:release`）
+- 手工：`build-closure` → `bump-version <新版本>` → `pnpm build`
+
 ## [0.2.0]（2026-08-30）— 双通道架构 + 依赖闭包
 
 **新增**

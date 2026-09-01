@@ -87,11 +87,14 @@ pnpm dev
 
 ### 升级（npm 通道，deepseek-harness 发版后）
 
+> **依赖升级 = 应用发版**：每次升级 dsh 都要同步 app 版本（安装包名带新版本号），`bump-version` 紧跟 `build-closure`。
+
 ```bash
 pnpm run sync:list                                     # ① 查看可用版本
 pnpm run sync:manifest -- --ref dsh-v<版本>            # ② 上游增删包时刷清单（必须用 git 标签，别用 master）
-pnpm run build:closure -- --version <新版本> --sync   # ③ 生成 npm 模式闭包
-pnpm build                                             # ④ 重新组装 + 打包
+pnpm run build:closure -- --version <dsh版本> --sync  # ③ 生成 npm 模式闭包（dsh 版本）
+node scripts/bump-version.mjs <app版本>                # ④ 同步应用版本（依赖升级 → 发版，与 CHANGELOG 一致）
+pnpm build                                             # ⑤ 重新组装 + 打包
 ```
 
 ### 源码通道（跟随 deepseek-harness 源码）
@@ -107,6 +110,7 @@ pnpm build                                             # ② 统一打包（组�
 - **源码通道**（最新源码）：`node scripts/build-closure.mjs --source <源码目录>` → `pnpm build`
 
 > 两条通道**唯一区别**是 `build-closure` 的入参（`--version` 用 npm / `--source` 用源码），组装和打包完全相同（`pnpm build`）。
+> **发版前都要 bump app 版本**（依赖升级也要，见上「升级」流程：`build-closure` → `bump-version` → `pnpm build`）。
 > 两通道**共享 `~/.dsh`**：源码版仅向前（试用前备份 `~/.dsh`）、别同时跑两个通道。日常/发布用 npm 通道，追最新源码用源码通道。
 
 ### 修改应用版本（发版时）
@@ -118,6 +122,8 @@ pnpm build                               # build 只打包，不改版本
 
 > 版本格式 `x.y.z`（可带 `-rc.N`/`-alpha.N`/`-beta.N`），非法拒绝写入；**低于当前版本会警告 + 确认**
 > （`--yes` 放行）。本地便利入口 `pnpm build:local`：打包前检查版本一致性。
+> 依赖升级也走此步（见上「升级」流程：`build-closure` 后紧跟 `bump-version`）。
+> **只升级 dsh 的固定流程可用一键脚本** `pnpm quick:release`（交互式：选通道 → 输参数 → bump → 写 CHANGELOG + 详情文档 → 打包，每步 check、可中断），详见 [部署与发布](./docs/部署与发布.md)「快速一键发版」。
 
 ## 目录结构
 

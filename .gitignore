@@ -17,6 +17,8 @@ native/icons/
 native/gen/
 native/binaries/
 docs
+logs/
+scripts/release-notes/
 *.log
 Thumbs.db
 
