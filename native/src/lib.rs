@@ -856,7 +856,7 @@ fn append_shell_log(msg: &str) {
 /// node 跑 `--auto`：脚本自探测——已有（claude 在 PATH、codex 在 CODEX_BIN/~/.dsh/bin）就跳过，
 /// 没有才下载到 `~/.dsh/bin`。无网络 / 下载失败仅意味着对应子 agent 暂不可用，主程序照常。
 fn maybe_fetch_tools(app: &tauri::AppHandle) {
-    for script_name in ["fetch-claude.mjs", "fetch-codex.mjs"] {
+    for script_name in ["fetch-claude.mjs", "fetch-codex.mjs", "fetch-libreoffice.mjs"] {
         let script = match app.path().resource_dir() {
             Ok(d) => d.join(script_name),
             Err(_) => continue,

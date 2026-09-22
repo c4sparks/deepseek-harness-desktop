@@ -1,7 +1,7 @@
 {
   "name": "deepseek-harness-desktop",
   "description": "DeepSeek Harness desktop shell: a Tauri app embedding the dsh host as a Node sidecar. App package producing installers; source published for traceability.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "publishConfig": {
     "access": "public"
   },

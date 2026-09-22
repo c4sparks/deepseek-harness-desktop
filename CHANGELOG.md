@@ -8,6 +8,41 @@
 > - 建议分节：新增 / 变更 / 修复 / 依赖升级 / 升级要点。
 > - 发版顺序：先 `bump-version <新版本>` → 更新 CHANGELOG 顶部该版本条目 → `pnpm build:local`（校验一致性）。
 
+## [0.2.3]（2026-09-22）— 依赖升级 dsh 0.1.6-alpha.2
+**发版概要**
+- **dsh 依赖**：`0.1.5-rc.2` → `0.1.6-alpha.2`
+- **源码通道**基于 deepseek-harness 源码 `0.1.6-alpha.2`（file: 本地解析，296 包）
+- **包变化**：269 → 296（+27）；新增 33 包 / 移除 6 包 / 版本变更 253 个
+- **应用版本**：`0.2.2` → `0.2.3`
+- **安装包**：136.7 MB（未剪）→ **62.4 MB**
+**新增**
+- **LibreOffice 引擎按需补装**（`scripts/fetch-libreoffice.mjs`，**可移除**）：dsh 0.1.6 起
+  `@deepseek-ai/libreoffice-kit-<platform>`（win32-x64 的 `program/` 约 330MB）随 web profile
+  默认装入，用于 office 文档转 PDF。该引擎由上游**内部解析**路径加载
+  （`node_modules/@deepseek-ai/libreoffice-kit-<platform>`，无 env 可覆盖），故补装**回原位**，
+  无需 patch 上游；由壳 `maybe_fetch_tools` 首次启动后台执行。缺引擎时
+  `createConverter` 以 `ConversionError: unavailable` **优雅降级**（宿主照常启动，已实测），
+  补装失败只记日志。版本钉死上游锁定值 `0.0.1`（registry 已有 0.0.3，勿用 latest）。
+**变更**
+- **LibreOffice 平台包剪出安装包**（`package-sidecar.mjs` 新增 `pruneOptionalBulk`）：只剪
+  **平台包**，保留主包 `libreoffice-kit`（~800KB，上游 `import` 它）。宿主 bundle
+  616MB → 287MB，安装包 136.7 → 62.4 MB。与既有 node-pty / sharp / claude-agent-sdk
+  三条剪枝同款；不需要该功能时删掉该函数调用即可回退。
+**修复**
+- **安装包内 fetch 脚本缺 `lib/`，claude/codex 子 agent 自动下载自 0.2.0 起从未生效**：
+  `native/tauri.conf.json` 的 `bundle.resources` 原先只打包 `fetch-*.mjs` 脚本本身，**漏了它们
+  `import` 的 `scripts/lib/`**（`registry.mjs` / `log.mjs`），安装后脚本一跑即
+  `ERR_MODULE_NOT_FOUND`。因壳的 `maybe_fetch_tools` 是**后台 best-effort**（不看退出码、
+  失败只写日志）而长期静默未暴露。修复：`bundle.resources` 增加 `"../scripts/lib": "lib"`。
+  **修复后 claude / codex 的自动下载才真正开始工作**。
+**提交信息（模板）**
+```bash
+git add -A && git commit -m "build(deps): upgrade deepseek-harness to 0.1.6-alpha.2 (source) and app to 0.2.3"
+```
+**升级要点**
+- 一键发版：`node scripts/quick-release.mjs`（或 `pnpm quick:release`）
+- 手工：`build-closure` → `bump-version <新版本>` → `pnpm build`
+
 ## [0.2.2]（2026-09-22）— 依赖升级 dsh 0.1.5-rc.2 + 修复 desktop profile 无法启动
 **发版概要**
 - **dsh 依赖**：`0.1.2-rc.1` → `0.1.5-rc.2`

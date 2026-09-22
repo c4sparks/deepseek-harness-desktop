@@ -22,9 +22,6 @@ scripts/release-notes/
 *.log
 Thumbs.db
 
-.dsh
-.claude
-.codegraph
-tmp
-.npm-cache/
+.*/
+tmp/
 

@@ -7,4 +7,4 @@ native/gen/
 native/binaries/
 *.log
 .stage/
-.npm-cache/
+.*/

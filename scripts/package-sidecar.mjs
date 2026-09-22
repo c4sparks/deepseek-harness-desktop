@@ -224,6 +224,39 @@ function pruneNativeCrossPlatform(appDir, opts) {
   console.log(`pruned ${removed} cross-platform native packages (keep ${keep})`)
 }
 
+/**
+ * 剪掉体积巨大、且默认用不到的**可选**引擎包（与上面的跨平台裁剪不同：
+ * 这里剪的是**当前平台**的包，只是因为它大得不合理）。
+ *
+ * `@deepseek-ai/libreoffice-kit-<platform>`（win32-x64 的 `program/` 约 330MB，
+ * 压缩后安装包 +87MB）是上游 0.1.6 起为 office 文档转 PDF
+ * （`@deepseek-ai/dsh-document-office-to-pdf`）捆绑的整套 LibreOffice 引擎，
+ * 随 web profile 默认装进来。只剪平台包，保留主包 `@deepseek-ai/libreoffice-kit`
+ * （~800KB，上游 `import` 它）。
+ *
+ * 缺失时 `createConverter` 以 `ConversionError: unavailable` **优雅降级**
+ * （宿主照常启动，已实测），并由 `scripts/fetch-libreoffice.mjs` 在首次启动时
+ * 按需补装回 node_modules 原位（引擎路径由上游内部解析，无 env 可覆盖，
+ * 故不能像 codex 那样装到 ~/.dsh）。
+ *
+ * 不需要该功能 / 上游改为按需下载时：删除本函数与其调用即可（另见
+ * fetch-libreoffice.mjs 头部的移除点清单）。
+ */
+function pruneOptionalBulk(appDir, opts) {
+  const dshDir = join(appDir, 'node_modules', '@deepseek-ai')
+  if (!existsSync(dshDir)) return
+  // 只匹配平台包（libreoffice-kit-win32-x64…），不碰主包 libreoffice-kit。
+  const targets = readdirSync(dshDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name.startsWith('libreoffice-kit-'))
+  if (!targets.length) return
+  if (opts.dryRun) {
+    for (const t of targets) console.log(`[dry-run] would prune ${t.name}`)
+    return
+  }
+  for (const t of targets) rmSync(join(dshDir, t.name), { recursive: true, force: true })
+  console.log(`pruned ${targets.length} optional engine package(s) (libreoffice-kit-*)`)
+}
+
 /** 打包时兜底记录 ledger：读闭包 dsh 版本 + 推断 channel 写入（merge 保留 build-closure 富条目）。 */
 function recordLedger(hostSource) {
   try {
@@ -265,6 +298,8 @@ function prepareHostBundle(opts) {
   pruneHostBundle(appDir, opts)
   // Keep only this platform's native binaries (node-pty prebuilds, @img/sharp).
   pruneNativeCrossPlatform(appDir, opts)
+  // 剪掉可选的巨型引擎包（LibreOffice，330MB）：首次启动由 fetch-libreoffice.mjs 按需补装。
+  pruneOptionalBulk(appDir, opts)
   // codex 瘦身 + patch（可移除：上游支持 codex PATH/CODEX_BIN 后删此行，见 apply-codex-shrink.mjs 头部）。
   run('node', ['scripts/apply-codex-shrink.mjs', appDir], opts)
   // 清理闭包安装源：file: tgz 已解包进 node_modules，归档是死重，且会被 bundle.resources
