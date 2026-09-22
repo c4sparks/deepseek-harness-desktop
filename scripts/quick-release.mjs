@@ -311,7 +311,7 @@ function tsForFile() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
 }
 
-function buildChangelogEntry({ appVersion, prevAppVersion, channel, dshVersion, prevDshVersion, stats, sourcePath }) {
+function buildChangelogEntry({ appVersion, prevAppVersion, channel, dshVersion, prevDshVersion, stats, dshCommit }) {
   const date = todayStr()
   const total = stats.prevTotal ? `${stats.prevTotal} → ${stats.newTotal}（${stats.newTotal - stats.prevTotal >= 0 ? '+' : ''}${stats.newTotal - stats.prevTotal}）` : `${stats.newTotal} 包`
   const depLine = channel === 'npm'
@@ -324,7 +324,8 @@ function buildChangelogEntry({ appVersion, prevAppVersion, channel, dshVersion, 
   const appLine = prevAppVersion === appVersion
     ? `- **应用版本**保持 \`${appVersion}\``
     : `- **应用版本**：\`${prevAppVersion}\` → \`${appVersion}\``
-  const srcLine = channel === 'source' && sourcePath ? `- 源码目录：\`${sourcePath}\`` : ''
+  // CHANGELOG 是入库文档：不写本地源码绝对路径（不可移植），用源码 commit 定位。
+  const srcLine = channel === 'source' && dshCommit ? `- 源码 commit：\`${dshCommit}\`` : ''
   const commitMsg = `build(deps): upgrade deepseek-harness to ${dshVersion} (${channel}) and app to ${appVersion}`
   return [
     `## [${appVersion}]（${date}）— 依赖升级 dsh ${dshVersion}`,
@@ -511,7 +512,7 @@ async function main() {
     console.log(`  [DRY-RUN] 统计预览：${stats.prevTotal} → ${stats.newTotal}（+${stats.added}/-${stats.removed}，三方变更 ${stats.thirdChanged}）— 未写文件`)
   } else {
     const notesPath = writeReleaseNotes({ date: todayStr(), appVersion, prevAppVersion, channel, dshVersion, prevDshVersion, sourcePath, oldList: prevPkgList, newList: newPkgList, commitMsg })
-    const entryText = buildChangelogEntry({ appVersion, prevAppVersion, channel, dshVersion, prevDshVersion, stats, sourcePath })
+    const entryText = buildChangelogEntry({ appVersion, prevAppVersion, channel, dshVersion, prevDshVersion, stats, dshCommit: entry?.dshCommit })
     upsertChangelog(entryText)
     console.log(`  ✓ CHANGELOG ## [${appVersion}]（${todayStr()}）已写入（统计：${stats.prevTotal} → ${stats.newTotal}，+${stats.added}/-${stats.removed}）`)
     console.log(`  ✓ 详情文档: ${notesPath}`)

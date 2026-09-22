@@ -8,6 +8,36 @@
 > - 建议分节：新增 / 变更 / 修复 / 依赖升级 / 升级要点。
 > - 发版顺序：先 `bump-version <新版本>` → 更新 CHANGELOG 顶部该版本条目 → `pnpm build:local`（校验一致性）。
 
+## [0.2.2]（2026-09-22）— 依赖升级 dsh 0.1.5-rc.2 + 修复 desktop profile 无法启动
+**发版概要**
+- **dsh 依赖**：`0.1.2-rc.1` → `0.1.5-rc.2`
+- **源码通道**基于 deepseek-harness 源码 `0.1.5-rc.2`（file: 本地解析，269 包）
+- **包变化**：246 → 269（+23）；新增 24 包 / 移除 1 包 / 版本变更 236 个
+- **应用版本**：`0.2.1-rc.1` → `0.2.2`
+**修复**
+- **桌面壳打不开（sidecar 立即 `exit 1`）**：dsh 0.1.5 起上游把 `desktop` 这个 profile 名连同
+  `$DSH_HOME/profiles/desktop` 目录**保留给官方 Electron 应用**——`apps/cli/src/args.ts` 的
+  `rejectElectronProfile` 对 `--profile desktop` 直接报错退出
+  （`profile "desktop" is managed exclusively by the Electron application`）。
+  壳的托盘菜单「切换 Profile → Desktop profile」会把该名字写入
+  `$DSH_HOME/desktop-settings.json`，切过去之后每次启动 sidecar 都立即退出（重试 3 次后停在错误页）。
+  修复：
+  - 壳自定义桌面 profile 改名 `desktop` → **`desktop-local`**（新增 `DESKTOP_PROFILE` 常量），
+    托盘菜单项同步改为「Desktop profile（local）」，事件处理改指向新名字。
+  - `load_settings` 增加 `normalize_profile`：settings 里残留旧值 `desktop` 时**自动回退**到
+    `desktop-local` 并打日志，避免旧配置把应用锁死在打不开的状态。
+  - `WEB_PROFILE` / `UPSTREAM_RESERVED_PROFILE` 常量化，注释说明上游保留名的由来。
+- 用户侧：`~/.dsh/profiles/desktop` 已**复制**为 `~/.dsh/profiles/desktop-local`（原目录保留作回退），
+  `desktop-local/package.json` 的 `name` 同步为 `dsh-profile-desktop-local`；
+  `~/.dsh/desktop-settings.json` 的 `profile` 指向 `desktop-local`。
+**提交信息（模板）**
+```bash
+git add -A && git commit -m "build(deps): upgrade deepseek-harness to 0.1.5-rc.2 (source) and app to 0.2.2"
+```
+**升级要点**
+- 一键发版：`node scripts/quick-release.mjs`（或 `pnpm quick:release`）
+- 手工：`build-closure` → `bump-version <新版本>` → `pnpm build`
+
 ## [0.2.1-rc.1]（2026-09-03）— 依赖升级 dsh 0.1.2-rc.1
 **发版概要**
 - **dsh 依赖**：`0.1.2-alpha.3` → `0.1.2-rc.1`

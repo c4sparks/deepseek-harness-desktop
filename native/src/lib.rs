@@ -185,14 +185,44 @@ struct DesktopSettings {
     #[serde(default)]
     tray_mode: bool,
     /// The dsh profile the shell boots (`$DSH_HOME/profiles/<profile>`).
-    /// `web` is dsh's official profile (the `dsh web` alias); any profile name
-    /// under DSH_HOME works. Runtime-switchable via the tray menu.
+    /// `web` is dsh's official profile (the `dsh web` alias); the shell's own
+    /// desktop profile is [`DESKTOP_PROFILE`]. The bare name `desktop` is
+    /// reserved by upstream's Electron app and must never reach the sidecar
+    /// (see [`normalize_profile`]). Runtime-switchable via the tray menu.
     #[serde(default = "default_profile")]
     profile: String,
 }
 
 fn default_profile() -> String {
-    "web".into()
+    WEB_PROFILE.into()
+}
+
+/// 上游官方 web profile（`dsh web` 别名）。
+const WEB_PROFILE: &str = "web";
+
+/// 壳自定义的桌面 profile（`$DSH_HOME/profiles/desktop-local`）。
+///
+/// **不能叫 `desktop`**：dsh 0.1.5 起该名字由上游官方 Electron 应用独占——
+/// `apps/cli/src/args.ts` 的 `rejectElectronProfile` 对 `--profile desktop`
+/// 直接报错退出（`profile "desktop" is managed exclusively by the Electron
+/// application`），壳若传它，sidecar 立即 exit 1、桌面壳卡在错误页。
+/// 上游该 profile 的目录也是 `$DSH_HOME/profiles/desktop`，改名可避免与其互相覆盖。
+const DESKTOP_PROFILE: &str = "desktop-local";
+
+/// 上游保留给官方 Electron 应用的 profile 名（大小写不敏感），壳不可启动。
+const UPSTREAM_RESERVED_PROFILE: &str = "desktop";
+
+/// 归一化 settings 里的 profile：残留的旧值 `desktop`（0.1.5 之前壳用的名字）
+/// 回退到 [`DESKTOP_PROFILE`]，避免 sidecar 启动即失败导致桌面壳打不开。
+fn normalize_profile(profile: String) -> String {
+    if profile.eq_ignore_ascii_case(UPSTREAM_RESERVED_PROFILE) {
+        eprintln!(
+            "deepseek-harness-desktop: profile \"{profile}\" 已被上游保留，回退到 \"{DESKTOP_PROFILE}\""
+        );
+        DESKTOP_PROFILE.into()
+    } else {
+        profile
+    }
 }
 
 impl Default for DesktopSettings {
@@ -223,8 +253,11 @@ fn settings_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
 fn load_settings(app: &tauri::AppHandle) -> DesktopSettings {
     let Some(path) = settings_path(app) else { return DesktopSettings::default() };
     match std::fs::read_to_string(&path) {
-        Ok(text) => match serde_json::from_str(&text) {
-            Ok(settings) => settings,
+        Ok(text) => match serde_json::from_str::<DesktopSettings>(&text) {
+            Ok(mut settings) => {
+                settings.profile = normalize_profile(settings.profile);
+                settings
+            }
             Err(e) => {
                 eprintln!("deepseek-harness-desktop: settings parse failed ({path:?}): {e}");
                 DesktopSettings::default()
@@ -553,7 +586,7 @@ fn restart_sidecar(app: tauri::AppHandle) {
 /// `profile` setting; selecting one persists it and restarts the sidecar).
 fn build_profile_submenu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Submenu<tauri::Wry>> {
     let web = MenuItem::with_id(app, "profile-web", "Web profile（官方）", true, None::<&str>)?;
-    let desktop = MenuItem::with_id(app, "profile-desktop", "Desktop profile", true, None::<&str>)?;
+    let desktop = MenuItem::with_id(app, "profile-desktop", "Desktop profile（local）", true, None::<&str>)?;
     Submenu::with_items(app, "切换 Profile", true, &[&web, &desktop])
 }
 
@@ -705,7 +738,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
                 apply_tray_mode(app, !tray_mode);
             }
             "profile-web" => set_profile(app.clone(), "web".into()),
-            "profile-desktop" => set_profile(app.clone(), "desktop".into()),
+            "profile-desktop" => set_profile(app.clone(), DESKTOP_PROFILE.into()),
             "quit" => quit_app(app),
             _ => {}
         })
