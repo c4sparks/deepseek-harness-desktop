@@ -95,15 +95,15 @@ fn readiness_url(line: &str) -> Option<String> {
     }
 }
 
-/// Absolute path to the deployed host entry.
+/// Absolute path to the deployed host bundle root (`.../dsh-host/app`), if present.
 ///
 /// Resolution order:
-/// 1. bundled layout: `resource_dir()/dsh-host/app/node_modules/@deepseek-ai/dsh/lib/bin.js`
-/// 2. dev fallback: `exe_dir()/../../../resources/app/...` — the staged host bundle
+/// 1. bundled layout: `resource_dir()/dsh-host/app`
+/// 2. dev fallback: `exe_dir()/../../../resources/app` — the staged host bundle
 ///    under `resources/app`. `pnpm deploy` materializes it (the M1 standalone
 ///    test verified it runs), whereas tauri-build's copy into `target/` does not
 ///    preserve pnpm's symlinked node_modules.
-fn host_entry_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+fn host_app_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     let mut candidates = Vec::new();
     if let Ok(dir) = app.path().resource_dir() {
         candidates.push(dir.join("dsh-host").join("app"));
@@ -113,18 +113,22 @@ fn host_entry_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
             candidates.push(parent.join("..").join("..").join("..").join("resources").join("app"));
         }
     }
-    for base in candidates {
-        let entry = base
-            .join("node_modules")
-            .join("@deepseek-ai")
-            .join("dsh")
-            .join("lib")
-            .join("bin.js");
-        if entry.exists() {
-            return Some(entry);
-        }
-    }
-    None
+    candidates.into_iter().find(|base| host_entry_in(base).exists())
+}
+
+/// Host entry (`@deepseek-ai/dsh/lib/bin.js`) inside a deployed bundle root.
+fn host_entry_in(app_dir: &std::path::Path) -> std::path::PathBuf {
+    app_dir
+        .join("node_modules")
+        .join("@deepseek-ai")
+        .join("dsh")
+        .join("lib")
+        .join("bin.js")
+}
+
+/// Absolute path to the deployed host entry (see `host_app_dir`).
+fn host_entry_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    host_app_dir(app).map(|dir| host_entry_in(&dir))
 }
 
 /// Holds the live sidecar handle and lifecycle flags.
@@ -698,6 +702,38 @@ fn set_profile(app: tauri::AppHandle, profile: String) {
     start_sidecar(app, 0);
 }
 
+/// Versions shown in the loading page's bottom-right corner.
+///
+/// `dsh` comes from the **deployed host bundle** (`@deepseek-ai/dsh/package.json`)
+/// rather than the build-time closure — that is the code actually running, and it
+/// stays truthful if a user swaps the host bundle. `None` when the bundle is not
+/// deployed (broken install), so the page falls back to the shell version alone.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Versions {
+    app: String,
+    dsh: Option<String>,
+}
+
+fn host_dsh_version(app: &tauri::AppHandle) -> Option<String> {
+    let pkg = host_app_dir(app)?
+        .join("node_modules")
+        .join("@deepseek-ai")
+        .join("dsh")
+        .join("package.json");
+    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(pkg).ok()?).ok()?;
+    json.get("version")?.as_str().map(str::to_string)
+}
+
+/// Version info for the loading page (invoked from `src/shell.js`).
+#[tauri::command]
+fn versions(app: tauri::AppHandle) -> Versions {
+    Versions {
+        app: app.package_info().version.to_string(),
+        dsh: host_dsh_version(&app),
+    }
+}
+
 /// System tray icon + menu (M2 + 侧车模式): window mode shows 显示/隐藏/退出
 /// plus 在浏览器中打开; tray mode (`trayMode` setting) shows
 /// 打开 dsh（浏览器）/打开桌面窗口/退出 and left-click opens the original dsh in
@@ -920,7 +956,7 @@ pub fn run() {
                 handle_deep_link(app, url);
             }
         }))
-        .invoke_handler(tauri::generate_handler![restart_sidecar, set_tray_mode, set_profile])
+        .invoke_handler(tauri::generate_handler![restart_sidecar, set_tray_mode, set_profile, versions])
         .on_window_event(|window, event| {
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {

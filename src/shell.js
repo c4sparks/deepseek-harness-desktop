@@ -14,6 +14,19 @@ const loadingEl = document.getElementById('loading');
 const errorEl = document.getElementById('error');
 const errorMsgEl = document.getElementById('error-msg');
 const retryBtn = document.getElementById('retry-btn');
+const versionsEl = document.getElementById('versions');
+
+// Bottom-right corner: which dsh host (and which shell) is actually running —
+// the first thing worth knowing when this page shows an error. `dsh` is null
+// when the host bundle is not deployed; the shell version always resolves.
+invoke('versions')
+  .then((v) => {
+    versionsEl.textContent = `dsh ${v.dsh ?? '未部署'} · 桌面 ${v.app}`;
+    versionsEl.hidden = false;
+  })
+  .catch((err) => {
+    console.error('dsh shell: failed to load versions', err);
+  });
 
 function showLoading() {
   errorEl.hidden = true;

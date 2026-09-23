@@ -8,6 +8,54 @@
 > - 建议分节：新增 / 变更 / 修复 / 依赖升级 / 升级要点。
 > - 发版顺序：先 `bump-version <新版本>` → 更新 CHANGELOG 顶部该版本条目 → `pnpm build:local`（校验一致性）。
 
+## [0.2.4]（2026-09-24）— 依赖升级 dsh 0.1.7-rc.1 + 修复宿主包安装 + 启动页版本角标
+**发版概要**
+- **dsh 依赖**：`0.1.6-alpha.2` → `0.1.7-rc.1`
+- **npm 通道**锁定 `@deepseek-ai/*@0.1.7-rc.1`（registry 解析，295 包；清单按上游标签 `dsh-v0.1.7-rc.1` 刷新，包集与同日的 alpha.2 完全一致）
+- **包变化**：296 → 295（-1）；新增 22 包 / 移除 23 包 / 版本变更 273 个
+- **应用版本**：`0.2.3` → `0.2.4`
+- **安装包**：**85.8 MB**（宿主 bundle 287M → 367M）
+**新增**
+- **启动页右下角版本角标**：显示正在运行的宿主版本与壳版本（`dsh 0.1.7-rc.1 · 桌面 0.2.4`）——
+  排障时一眼看清跑的是哪份 dsh。壳新增 `versions` 命令（`native/src/lib.rs`），版本**读运行中的宿主包**
+  `…/dsh-host/app/node_modules/@deepseek-ai/dsh/package.json`，而非构建期闭包，因此用户单独替换宿主包后
+  角标依然准确；宿主包缺失（安装损坏）时退化为只显示壳版本。invoke 失败只打日志，不影响启动流程。
+**依赖升级**
+- 上游 0.1.7 新增账号 / 设置面板 / 语音输入 / 预设体系相关包 22 个（`dsh-deepseek-account`、
+  `dsh-api-account-controller`、`dsh-client-ui-settings-*`、`dsh-experimental-*-speech-to-text`、
+  `dsh-agent-preset`…），清单见发版详情。
+- 移除 23 个主要是**通道口径差异**：源码通道逐个列出源码树内所有非 private 包（`cordis*`、`cosmokit`、
+  `node-addon-system`、`schemastery` 等），npm 通道只锁 `dsh-*` 清单，这些改由 npm 作传递依赖解析；
+  其余为上游下架或清单排除（`dsh-acp`、`dsh-headless`、`dsh-sdk-*`、`dsh-hooks-*`、`dsh-web-frontend`…）。
+- `@deepseek-ai/cordis-plugin-group`（独立版本线）`1.0.2` → `1.0.4`（对齐 npm latest）。
+- 安装包 +20.4 MB 来自上游默认装入的 browser-use / 语音 / computer-use 系列平台包
+  （`@trycua` 26M、`sherpa-onnx-win-x64` 23M、`chrome-devtools-mcp` 14M、`playwright-core` 12M…）；
+  如需瘦身可仿 `libreoffice-kit` 做「剪出安装包 + 首次启动按需补装」。
+**修复**
+- **宿主包安装的两处 npm 崩溃**（`scripts/package-sidecar.mjs`；0.2.4 首次尝试 dsh 0.1.7-alpha.2
+  即卡在此处、未出包）：
+  - **npm 10.9.3 arborist 走 peer-set 递归崩溃**：`npm install` 报 `TypeError: Cannot read properties
+    of null (reading 'edgesOut')`（`build-ideal-tree.js` 的 `loadPeerSet`）。诱因是上游
+    `@deepseek-ai/dsh-session-snapshot` 把 `vitest@^4.1.8` 放在 **dependencies**，npm 顺着 vitest 的
+    peer（`@vitest/browser-*` / `@vitejs/devtools-vitest`）递归走崩。修复：宿主包安装加
+    `--legacy-peer-deps`——闭包已显式列全 `@deepseek-ai/*` 与三方运行时依赖，peer 自动安装对本
+    bundle 无增益（实测 742 vs 743 包；install 脚本照常执行，koffi 走 `@koromix/koffi-win32-x64`、
+    node-pty 走 `prebuilds/`，原生二进制齐全）。npm 11 不崩但**默认不跑 install 脚本**（原生模块
+    缺失），故不采用。
+  - **从仓库根目录调 `npm install --prefix <appDir>` 静默崩溃**（exit 1、stdout/stderr 全空、npm
+    debug 日志在 reify 解包中途截断）：cwd 那个项目（仓库根 `package.json` + 其 `node_modules`）
+    也被算进依赖树。修复：该次安装改为在 `resources/app` 内执行（`run()` 支持 `cwd`）。两种 cwd
+    各复现 3 次，稳定。
+  - **移除条件**：上游把 vitest 移出运行时依赖、或本机 npm 升到不再复现的版本后，即可去掉
+    `--legacy-peer-deps`（见脚本注释与 `tmp/docs/TODO.md`）。
+**提交信息（模板）**
+```bash
+git add -A && git commit -m "build(deps): upgrade deepseek-harness to 0.1.7-rc.1 (npm) and app to 0.2.4"
+```
+**升级要点**
+- 一键发版：`node scripts/quick-release.mjs`（或 `pnpm quick:release`）
+- 手工：`build-closure` → `bump-version <新版本>` → `pnpm build`
+
 ## [0.2.3]（2026-09-22）— 依赖升级 dsh 0.1.6-alpha.2
 **发版概要**
 - **dsh 依赖**：`0.1.5-rc.2` → `0.1.6-alpha.2`

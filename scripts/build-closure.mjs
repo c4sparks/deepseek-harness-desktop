@@ -29,7 +29,7 @@ const DEFAULT_OUT = join(ROOT, 'deepseek-harness') // 与 scripts 同级
 const MANIFEST_PATH = join(ROOT, 'scripts', 'dsh-manifest.json')
 const SKIP_DIRS = new Set(['node_modules', '.git', '.turbo', 'dist', 'coverage', 'tmp', 'test-support'])
 /** 独立版本线的包：不跟随 dsh 版本走（npm 模式用它自己的版本）。 */
-const SPECIAL = { '@deepseek-ai/cordis-plugin-group': '1.0.1' }
+const SPECIAL = { '@deepseek-ai/cordis-plugin-group': '1.0.4' }
 /** npm 模式的锚定包（registry 上确认版本的入口）。 */
 const ANCHOR = '@deepseek-ai/dsh'
 

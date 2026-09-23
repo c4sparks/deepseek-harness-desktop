@@ -99,9 +99,10 @@ function quoteArg(a) {
 function run(cmd, args, opts) {
   console.log(`$ ${cmd} ${args.join(' ')}`)
   if (opts.dryRun) return
+  const spawnOpts = { stdio: 'inherit', cwd: opts.cwd } // cwd 缺省继承当前目录
   const r = process.platform === 'win32'
-    ? spawnSync('cmd', ['/d', '/s', '/c', [cmd, ...args].map(quoteArg).join(' ')], { stdio: 'inherit' })
-    : spawnSync(cmd, args, { stdio: 'inherit' })
+    ? spawnSync('cmd', ['/d', '/s', '/c', [cmd, ...args].map(quoteArg).join(' ')], spawnOpts)
+    : spawnSync(cmd, args, spawnOpts)
   if (r.error) throw new Error(`${cmd} failed to start: ${r.error.message}`)
   if (r.status !== 0) throw new Error(`${cmd} exited with ${r.status}`)
 }
@@ -292,7 +293,21 @@ function prepareHostBundle(opts) {
   // files + a long project root can still cross 260, so prune right after
   // install (see pruneHostBundle). Native modules (node-pty/koffi) compile via
   // npm install scripts.
-  run('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--prefix', appDir.replace(/\\/g, '/')], opts)
+  //
+  // --legacy-peer-deps: npm 10.9.3 的 arborist 在走 peer-set 递归时对
+  // `@deepseek-ai/dsh-session-snapshot` 的 vitest 依赖崩溃（同 peer 链上有
+  // `@vitest/browser-*` / `@vitejs/devtools-vitest`，报
+  // `TypeError: Cannot read properties of null (reading 'edgesOut')` @ build-ideal-tree.js
+  // loadPeerSet）；关闭自动装 peer 即绕过。闭包已显式列出全部 @deepseek-ai/* 与三方
+  // 运行时依赖，peer 自动安装对本 bundle 无实际增益（实测树规模 742 vs 743，install
+  // 脚本照常执行，koffi/node-pty 原生二进制齐全）。**上游不再带 vitest 依赖、或本机
+  // npm 升到不再复现该 bug 的版本后，可去掉此 flag。**
+  //
+  // cwd: appDir —— **必须在目标目录内跑**。从仓库根目录调 `npm install --prefix <appDir>`
+  // 会静默崩溃（exit 1、stdout/stderr 全空、npm debug 日志在 reify 解包中途截断）：cwd 的
+  // 项目（仓库根 package.json + 其 node_modules）也会被 npm 算进依赖树。2026-09-23 实测
+  // 稳定复现（连试 3 次），cd 进 appDir 后同一命令即通过（438/524/364 包重算，exit 0）。
+  run('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--legacy-peer-deps', '--prefix', appDir.replace(/\\/g, '/')], { ...opts, cwd: appDir })
   // Dev-only sourcemaps / type declarations would exceed MAX_PATH when bundled
   // (see pruneHostBundle) — remove them before tauri build packages this dir.
   pruneHostBundle(appDir, opts)

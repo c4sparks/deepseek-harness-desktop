@@ -100,6 +100,20 @@
     #retry-btn:hover { background: #388bfd; }
     #retry-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+    /* 右下角版本角标（启动页专用）：排障时一眼看到在跑的是哪个 dsh。
+       纯展示，不吃鼠标事件；加载页与错误页都可见（同一个文档）。 */
+    #versions {
+      position: fixed;
+      right: 14px;
+      bottom: 12px;
+      font-size: 11px;
+      color: var(--dim);
+      letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums;
+      user-select: none;
+      pointer-events: none;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .radar-ring { animation: none; opacity: 0.4; }
     }
@@ -121,6 +135,7 @@
     <div id="error-msg"></div>
     <button id="retry-btn">重试</button>
   </div>
+  <div id="versions" hidden></div>
   <script type="module" src="./shell.js"></script>
 </body>
 </html>
